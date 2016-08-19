@@ -1,6 +1,9 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+)
 
 // schedule starts and waits for all tasks in the given phase (Map or Reduce).
 func (mr *Master) schedule(phase jobPhase) {
@@ -24,7 +27,6 @@ func (mr *Master) schedule(phase jobPhase) {
 	//
 	// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
 	//
-	debug("in schedule")
 	args := make([]*DoTaskArgs, 0)
 	for i := 0; i < ntasks; i++ {
 		arg := &DoTaskArgs{
@@ -36,29 +38,41 @@ func (mr *Master) schedule(phase jobPhase) {
 		}
 		args = append(args, arg)
 	}
+	nrFinished := 0
+
+	mr.Lock()
+	initChan := make(chan string, len(mr.workers))
+	for _, work := range mr.workers {
+		initChan <- work
+	}
+	mr.Unlock()
 
 	finishedChan := make(chan string)
-	// mr.Lock()
-	// for i := 0; i < len(mr.workers); i++ {
-	// 	finishedChan <- mr.workers[i]
-	// }
-	// mr.Unlock()
 	for _, arg := range args {
 		// get a worker
 
 		var wk string
 		select {
 		case wk = <-mr.registerChannel:
+			mr.Lock()
+			mr.workers = append(mr.workers, wk)
+			mr.Unlock()
 		case wk = <-finishedChan:
-
+			nrFinished++
+		case wk = <-initChan:
 		}
-		// wk := <-finishedChan
 
 		go func(wk string, arg *DoTaskArgs) {
-			call(wk, "Worker.DoTask", arg, new(struct{}))
+			if call(wk, "Worker.DoTask", arg, new(struct{})) == false {
+				log.Fatal("schedule: can't call")
+			}
 			finishedChan <- wk
 		}(wk, arg)
 
+	}
+	// wait util all tasks are done
+	for ; nrFinished < ntasks; nrFinished++ {
+		<-finishedChan
 	}
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
