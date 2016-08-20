@@ -27,7 +27,10 @@ func (mr *Master) schedule(phase jobPhase) {
 	//
 	// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
 	//
-	args := make([]*DoTaskArgs, 0)
+	taskChan := make(chan *DoTaskArgs, ntasks)
+	finishedChan := make(chan bool, ntasks)
+	doneChan := make(chan bool)
+
 	for i := 0; i < ntasks; i++ {
 		arg := &DoTaskArgs{
 			JobName:       mr.jobName,
@@ -36,43 +39,89 @@ func (mr *Master) schedule(phase jobPhase) {
 			TaskNumber:    i,
 			NumOtherPhase: nios,
 		}
-		args = append(args, arg)
+		taskChan <- arg
 	}
-	nrFinished := 0
 
 	mr.Lock()
-	initChan := make(chan string, len(mr.workers))
+	workerChan := make(chan string, len(mr.workers))
+
 	for _, work := range mr.workers {
-		initChan <- work
+		workerChan <- work
 	}
 	mr.Unlock()
 
-	finishedChan := make(chan string)
-	for _, arg := range args {
-		// get a worker
+	// check the number of finished task, and close the doneChan to notify.
+	go func(ntasks int) {
+		nrFinished := 0
+		for nrFinished < ntasks {
+			select {
+			case <-finishedChan:
+				nrFinished++
+			}
+		}
+		close(doneChan)
+	}(ntasks)
 
+	for {
+		fmt.Print("hello")
+		select {
+		case <-doneChan:
+			goto outfor
+		default:
+		}
+
+		// get a task
+		var arg *DoTaskArgs
+		select {
+		case arg = <-taskChan:
+		// case <-time.After(0.1):
+		default:
+			arg = nil
+		}
+
+		if arg == nil {
+			continue
+		}
+
+		// get a worker
 		var wk string
 		select {
 		case wk = <-mr.registerChannel:
 			mr.Lock()
 			mr.workers = append(mr.workers, wk)
 			mr.Unlock()
-		case wk = <-finishedChan:
-			nrFinished++
-		case wk = <-initChan:
+		case wk = <-workerChan:
 		}
 
+		// do task
 		go func(wk string, arg *DoTaskArgs) {
 			if call(wk, "Worker.DoTask", arg, new(struct{})) == false {
-				log.Fatal("schedule: can't call")
+				log.Print("schedule: can't call")
+				// remove the work from mr.works
+				mr.Lock()
+				for idx, val := range mr.workers {
+					if val == wk {
+						log.Print("Schedule: delete worker", wk)
+						mr.workers[idx] = mr.workers[len(mr.workers)-1]
+						mr.workers = mr.workers[:len(mr.workers)-1]
+						break
+					}
+				}
+				mr.Unlock()
+				taskChan <- arg
+			} else {
+				finishedChan <- true
+
+				select {
+				case <-doneChan:
+					return
+				case workerChan <- wk:
+					return
+				}
 			}
-			finishedChan <- wk
 		}(wk, arg)
 
 	}
-	// wait util all tasks are done
-	for ; nrFinished < ntasks; nrFinished++ {
-		<-finishedChan
-	}
+outfor:
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
