@@ -461,7 +461,24 @@ func (rf *Raft) convertToLeader() {
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
-				ret := rf.sendAppendEntries(idx, args, reply)
+
+				// DPrintf("send AppendEntries(%v => %v)", rf.me, idx)
+				retChan := make(chan bool)
+				// run sendAppendEntries in a seperate goroutine, so we set a timeout.
+				go func(reply *AppendEntriesReply, retChan chan bool) {
+					start_time := time.Now()
+					ret := rf.sendAppendEntries(idx, args, reply)
+					elapsed := time.Since(start_time)
+					DPrintf("sendAppendEntries(%v => %v) took %s", rf.me, idx, elapsed)
+					retChan <- ret
+				}(reply, retChan)
+
+				var ret bool
+				select {
+				case ret = <-retChan:
+				case <-time.After(time.Millisecond * 200):
+					ret = false
+				}
 
 				rf.mu.Lock()
 				if ret == true {
