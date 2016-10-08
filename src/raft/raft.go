@@ -601,12 +601,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	randMs := getRandomElectionTimeout()
 	DPrintf("Server(%v) election timeout %v ms", me, randMs)
 
-	// rf.electionTimeout = time.Duration(randMs) * time.Millisecond
-	if me == 0 || me == 1 {
-		rf.electionTimeout = time.Duration(180 * time.Millisecond)
-	} else {
-		rf.electionTimeout = time.Duration(230 * time.Millisecond)
-	}
+	rf.electionTimeout = time.Duration(randMs) * time.Millisecond
 	rf.timer = time.NewTimer(rf.electionTimeout)
 	rf.heartbeatTimeout = time.Duration(100 * time.Millisecond)
 	// goroute to handle leader election
