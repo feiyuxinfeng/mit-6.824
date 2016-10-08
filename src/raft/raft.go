@@ -60,6 +60,8 @@ const (
 	CANDIDATE
 )
 
+const RPC_TIMEOUT = time.Millisecond * 200
+
 func (state NodeState) String() string {
 	switch state {
 	case LEADER:
@@ -476,7 +478,7 @@ func (rf *Raft) convertToLeader() {
 				var ret bool
 				select {
 				case ret = <-retChan:
-				case <-time.After(time.Millisecond * 200):
+				case <-time.After(RPC_TIMEOUT):
 					ret = false
 				}
 
