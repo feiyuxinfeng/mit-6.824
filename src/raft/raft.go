@@ -105,6 +105,8 @@ type Raft struct {
 	heartbeatTimeout time.Duration
 
 	numAliveNodes int
+
+	applyCh chan ApplyMsg
 }
 
 func (rf *Raft) getLastLogIndex() int {
@@ -413,6 +415,7 @@ func (rf *Raft) convertToFollower(term int) {
 	rf.currentTerm = term
 	rf.voteFor = VOTENULL
 	rf.updateTimer()
+	go rf.leaderElection()
 }
 
 func (rf *Raft) convertToLeader() {
@@ -516,11 +519,32 @@ func (rf *Raft) convertToLeader() {
 }
 
 func (rf *Raft) leaderElection() {
+	rf.mu.Lock()
+	prevTerm := rf.currentTerm - 1
+	rf.mu.Unlock()
+
+	var needExit int32 = 0
 	for {
+		if atomic.LoadInt32(&needExit) == 1 {
+			break
+		}
+		rf.mu.Lock()
+		if prevTerm < rf.currentTerm-1 {
+			rf.mu.Unlock()
+			break
+		}
+		if rf.state == LEADER {
+			rf.mu.Unlock()
+			break
+		}
+		rf.mu.Unlock()
+
 		<-rf.timer.C
 		DPrintf("Server(%v) expire, term %v", rf.me, rf.currentTerm)
 
 		rf.mu.Lock()
+		prevTerm = rf.currentTerm
+
 		rf.updateTimer()
 		rf.state = CANDIDATE
 		rf.currentTerm++
@@ -549,10 +573,12 @@ func (rf *Raft) leaderElection() {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					if rf.state != CANDIDATE || rf.currentTerm != args.Term {
+						atomic.StoreInt32(&needExit, 1)
 						return
 					}
 
 					if reply.Term > rf.currentTerm {
+						atomic.StoreInt32(&needExit, 1)
 						rf.convertToFollower(reply.Term)
 						return
 					}
@@ -561,6 +587,7 @@ func (rf *Raft) leaderElection() {
 					}
 					// if get marjor vote,convert to leader
 					if atomic.LoadInt32(&numVote) > int32(len(rf.peers)/2) {
+						atomic.StoreInt32(&needExit, 1)
 						rf.convertToLeader()
 					}
 				}
@@ -590,7 +617,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// Your initialization code here.
 
 	rf.currentTerm = 0
-	rf.voteFor = -1
+	rf.voteFor = VOTENULL
 	rf.log = make([]*LogEntry, 0)
 
 	rf.commitIndex = -1
@@ -610,5 +637,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
+	rf.applyCh = applyCh
 	return rf
 }
