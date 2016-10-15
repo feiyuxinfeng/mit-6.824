@@ -287,9 +287,24 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	return
 }
 
-func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	return ok
+func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply, timeoutMs int) bool {
+	if timeoutMs == 0 {
+		ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+		return ok
+	} else {
+		retChan := make(chan bool, 1)
+		go func(reply *AppendEntriesReply, retChan chan bool) {
+			ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+			retChan <- ok
+		}(reply, retChan)
+
+		select {
+		case ok := <-retChan:
+			return ok
+		case <-time.After(timeoutMs * time.Millisecond):
+			return false
+		}
+	}
 }
 
 //
@@ -368,9 +383,24 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 //
-func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
+func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply, timeoutMs int) bool {
+	if timeoutMs == 0 {
+		ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+		return ok
+	} else {
+		retChan := make(chan bool, 1)
+		go func(reply *AppendEntriesReply, retChan chan bool) {
+			ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+			retChan <- ok
+		}(reply, retChan)
+
+		select {
+		case ok := <-retChan:
+			return ok
+		case <-time.After(timeoutMs * time.Millisecond):
+			return false
+		}
+	}
 }
 
 //
@@ -469,7 +499,7 @@ func (rf *Raft) convertToLeader() {
 				// run sendAppendEntries in a seperate goroutine, so we set a timeout.
 				go func(reply *AppendEntriesReply, retChan chan bool) {
 					start_time := time.Now()
-					ret := rf.sendAppendEntries(idx, args, reply)
+					ret := rf.sendAppendEntries(idx, args, reply, 0)
 					elapsed := time.Since(start_time)
 					DPrintf("sendAppendEntries(%v => %v) took %s", rf.me, idx, elapsed)
 					retChan <- ret
@@ -546,7 +576,7 @@ func (rf *Raft) leaderElection() {
 
 			go func(rf *Raft, idx int) {
 				reply := &RequestVoteReply{}
-				ret := rf.sendRequestVote(idx, args, reply)
+				ret := rf.sendRequestVote(idx, args, reply, 0)
 				if ret == true {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
