@@ -111,6 +111,10 @@ type Raft struct {
 	applyCh chan ApplyMsg
 }
 
+func (rf *Raft) numLogs() int {
+	return len(rf.log)
+}
+
 func (rf *Raft) getLastLogIndex() int {
 	return len(rf.log) - 1
 }
@@ -262,28 +266,28 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		return
 	}
 	// 2
-	// if len(rf.log) < args.PrevLogIndex+1 {
-	// 	reply.Success = false
-	// 	reply.Term = rf.currentTerm
-	// 	return
-	// }
-	// if len(rf.log) > 0 && rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-	// 	reply.Success = false
-	// 	reply.Term = rf.currentTerm
-	// 	return
-	// }
-	// if len(args.Entries) > 0 {
-	// 	// 3
-	// 	rf.log = rf.log[:args.PrevLogIndex+1]
-	// 	// 4
-	// 	if args.Entries != nil {
-	// 		rf.log = append(rf.log, args.Entries...)
-	// 	}
-	// }
-	// // 5
-	// if args.LeaderCommit > rf.commitIndex {
-	// 	rf.commitIndex = args.LeaderCommit
-	// }
+	if len(rf.log) < args.PrevLogIndex+1 {
+		reply.Success = false
+		reply.Term = rf.currentTerm
+		return
+	}
+	if len(rf.log) > 0 && rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		reply.Success = false
+		reply.Term = rf.currentTerm
+		return
+	}
+	if len(args.Entries) > 0 {
+		// 3
+		rf.log = rf.log[:args.PrevLogIndex+1]
+		// 4
+		if args.Entries != nil {
+			rf.log = append(rf.log, args.Entries...)
+		}
+	}
+	// 5
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = args.LeaderCommit
+	}
 	rf.updateTimer()
 	reply.Success = true
 	reply.Term = rf.currentTerm
@@ -354,13 +358,13 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 		reply.Term = rf.currentTerm
 		return
 	}
-	// lastLogIndex := rf.getLastLogIndex()
-	// lastLogTerm := rf.getLastLogTerm()
-	// if args.LastLogIndex < lastLogIndex || args.LastLogTerm < lastLogTerm {
-	// 	reply.VoteGranted = false
-	// 	reply.Term = rf.currentTerm
-	// 	return
-	// }
+	lastLogIndex := rf.getLastLogIndex()
+	lastLogTerm := rf.getLastLogTerm()
+	if args.LastLogIndex < lastLogIndex || args.LastLogTerm < lastLogTerm {
+		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
+		return
+	}
 
 	rf.voteFor = args.CandidateId
 	reply.VoteGranted = true
@@ -420,10 +424,71 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
+	term, isLeader := rf.GetState()
+	index := rf.getLastLogIndex() + 1
+
+	if isLeader == false {
+		return index, term, isLeader
+	}
+	retChan := make(chan bool, len(rf.peers))
+	for i := 0; i < len(rf.peers); i++ {
+		if i == rf.me {
+			continue
+		}
+		go func(idx int) {
+			for ok := false; ok == false; {
+				rf.mu.Lock()
+				nextIdx := rf.nextIndex[idx]
+				args := AppendEntriesArgs{
+					Term:     rf.currentTerm,
+					LeaderId: rf.me,
+
+					PrevLogIndex: rf.getPrevLogIndex(idx),
+					PrevLogTerm:  rf.getPrevLogTerm(idx),
+					Entries:      rf.log[nextIdx:],
+
+					LeaderCommit: rf.commitIndex,
+				}
+				rf.mu.Unlock()
+
+				reply := &AppendEntriesReply{}
+				ok = rf.sendAppendEntries(idx, args, reply, RPC_TIMEOUT)
+
+				if ok == true {
+					// DPrintf("AppendEntries(%v => %v) success", rf.me, idx)
+					// if rf.state != LEADER {
+					// 	rf.mu.Unlock()
+					// 	return
+					// }
+
+					if reply.Term > rf.currentTerm {
+						// convert to follower
+						rf.convertToFollower(reply.Term)
+					} else {
+						if reply.Success == false {
+							rf.nextIndex[idx]--
+						} else {
+							rf.nextIndex[idx] = args.PrevLogIndex + 1
+							rf.matchIndex[idx] = args.PrevLogIndex
+							retChan <- true
+							return
+						}
+					}
+				}
+			}
+		}(i)
+	}
+
+	numSuccess := 0
+	for range retChan {
+		numSuccess++
+		if numSuccess >= len(rf.peers)/2 {
+			break
+		}
+	}
 	return index, term, isLeader
 }
 
@@ -460,7 +525,13 @@ func (rf *Raft) convertToLeader() {
 	rf.numAliveNodes = len(rf.peers)
 
 	rf.nextIndex = make([]int, len(rf.peers))
+	for i := 0; i < len(rf.peers); i++ {
+		rf.nextIndex[i] = rf.getLastLogIndex() + 1
+	}
 	rf.matchIndex = make([]int, len(rf.peers))
+	for i := 0; i < len(rf.peers); i++ {
+		rf.matchIndex[i] = -1
+	}
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
