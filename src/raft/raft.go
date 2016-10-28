@@ -252,18 +252,19 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// all server 1
-	if args.Term > rf.currentTerm {
-		rf.convertToFollower(args.Term)
-	}
-	if args.Term == rf.currentTerm && rf.state == CANDIDATE {
-		rf.convertToFollower(args.Term)
-	}
 	// 1
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
+	}
+
+	// all server 1
+	if args.Term > rf.currentTerm {
+		rf.convertToFollower(args.Term, args.LeaderId)
+	}
+	if args.Term == rf.currentTerm && rf.state == CANDIDATE {
+		rf.convertToFollower(args.Term, args.LeaderId)
 	}
 	// 2
 	if len(rf.log) < args.PrevLogIndex+1 {
@@ -342,15 +343,16 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// all server 1
-	if args.Term > rf.currentTerm {
-		rf.convertToFollower(args.Term)
-	}
 	// 1
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
 		return
+	}
+
+	// all server 1
+	if args.Term > rf.currentTerm {
+		rf.convertToFollower(args.Term, args.CandidateId)
 	}
 	// 2
 	if rf.voteFor != VOTENULL && rf.voteFor != args.CandidateId {
@@ -433,6 +435,14 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	if isLeader == false {
 		return index, term, isLeader
 	}
+	// append log to log slice
+	entry := &LogEntry{
+		Term:    rf.currentTerm,
+		Index:   rf.numLogs(),
+		Command: command,
+	}
+	rf.log = append(rf.log, entry)
+
 	retChan := make(chan bool, len(rf.peers))
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
@@ -466,7 +476,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 					if reply.Term > rf.currentTerm {
 						// convert to follower
-						rf.convertToFollower(reply.Term)
+						rf.convertToFollower(reply.Term, idx)
 					} else {
 						if reply.Success == false {
 							rf.nextIndex[idx]--
@@ -506,12 +516,12 @@ func getRandomElectionTimeout() int64 {
 	return 150 + rand.Int63n(150)
 }
 
-func (rf *Raft) convertToFollower(term int) {
+func (rf *Raft) convertToFollower(term int, voteFor int) {
 	DPrintf("Convert server %v's state(%v => follower) Term(%v => %v)", rf.me, rf.state.String(), rf.currentTerm, term)
 
 	rf.state = FOLLOWER
 	rf.currentTerm = term
-	rf.voteFor = VOTENULL
+	rf.voteFor = voteFor
 	rf.updateTimer()
 	go rf.leaderElection()
 }
@@ -591,7 +601,7 @@ func (rf *Raft) convertToLeader() {
 
 					if reply.Term > rf.currentTerm {
 						// convert to follower
-						rf.convertToFollower(reply.Term)
+						rf.convertToFollower(reply.Term, VOTENULL)
 						close(quitChan)
 					} else {
 						if reply.Success == false {
@@ -674,7 +684,7 @@ func (rf *Raft) leaderElection() {
 
 					if reply.Term > rf.currentTerm {
 						atomic.StoreInt32(&needExit, 1)
-						rf.convertToFollower(reply.Term)
+						rf.convertToFollower(reply.Term, VOTENULL)
 						return
 					}
 					if reply.VoteGranted == true {
