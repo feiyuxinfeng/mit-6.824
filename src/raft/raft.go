@@ -272,7 +272,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		reply.Term = rf.currentTerm
 		return
 	}
-	if len(rf.log) > 0 && rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+	if len(rf.log) > 0 && args.PrevLogIndex >= 0 && rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.Success = false
 		reply.Term = rf.currentTerm
 		return
@@ -288,6 +288,17 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	// 5
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = args.LeaderCommit
+	}
+	// all server 1
+	for ; rf.commitIndex > rf.lastApplied; rf.lastApplied++ {
+		entry := rf.log[rf.lastApplied]
+		msg := ApplyMsg{
+			Index:   entry.Index,
+			Command: entry.Command,
+		}
+		go func() {
+			rf.applyCh <- msg
+		}()
 	}
 	rf.updateTimer()
 	reply.Success = true
@@ -412,44 +423,19 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 	}
 }
 
-//
-// the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
-// server isn't the leader, returns false. otherwise start the
-// agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
-// may fail or lose an election.
-//
-// the first return value is the index that the command will appear at
-// if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
-// the leader.
-//
-func (rf *Raft) Start(command interface{}) (int, int, bool) {
+func (rf *Raft) replicateLog() bool {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	term, isLeader := rf.GetState()
-	index := rf.getLastLogIndex() + 1
-
-	if isLeader == false {
-		return index, term, isLeader
-	}
-	// append log to log slice
-	entry := &LogEntry{
-		Term:    rf.currentTerm,
-		Index:   rf.numLogs(),
-		Command: command,
-	}
-	rf.log = append(rf.log, entry)
+	totalServers := len(rf.peers)
+	me := rf.me
+	rf.mu.Unlock()
 
 	retChan := make(chan bool, len(rf.peers))
-	for i := 0; i < len(rf.peers); i++ {
-		if i == rf.me {
+	for i := 0; i < totalServers; i++ {
+		if i == me {
 			continue
 		}
 		go func(idx int) {
-			for ok := false; ok == false; {
+			for {
 				rf.mu.Lock()
 				nextIdx := rf.nextIndex[idx]
 				args := AppendEntriesArgs{
@@ -465,40 +451,93 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
-				ok = rf.sendAppendEntries(idx, args, reply, RPC_TIMEOUT)
+				ok := rf.sendAppendEntries(idx, args, reply, RPC_TIMEOUT)
+
+				rf.mu.Lock()
+
+				if rf.state != LEADER {
+					rf.mu.Unlock()
+
+					retChan <- false
+					return
+				}
 
 				if ok == true {
-					// DPrintf("AppendEntries(%v => %v) success", rf.me, idx)
-					// if rf.state != LEADER {
-					// 	rf.mu.Unlock()
-					// 	return
-					// }
-
 					if reply.Term > rf.currentTerm {
 						// convert to follower
 						rf.convertToFollower(reply.Term, idx)
+						rf.mu.Unlock()
+
+						retChan <- false
+						return
 					} else {
 						if reply.Success == false {
 							rf.nextIndex[idx]--
 						} else {
 							rf.nextIndex[idx] = args.PrevLogIndex + 1
 							rf.matchIndex[idx] = args.PrevLogIndex
+							rf.mu.Unlock()
+
 							retChan <- true
 							return
 						}
 					}
 				}
+				rf.mu.Unlock()
 			}
 		}(i)
 	}
 
 	numSuccess := 0
-	for range retChan {
-		numSuccess++
-		if numSuccess >= len(rf.peers)/2 {
+	numExit := 0
+	for status := range retChan {
+		numExit++
+		if status == true {
+			numSuccess++
+		}
+		if numSuccess >= totalServers/2 {
+			return true
+		}
+		if numExit == totalServers-1 {
 			break
 		}
 	}
+	return false
+}
+
+//
+// the service using Raft (e.g. a k/v server) wants to start
+// agreement on the next command to be appended to Raft's log. if this
+// server isn't the leader, returns false. otherwise start the
+// agreement and return immediately. there is no guarantee that this
+// command will ever be committed to the Raft log, since the leader
+// may fail or lose an election.
+//
+// the first return value is the index that the command will appear at
+// if it's ever committed. the second return value is the current
+// term. the third return value is true if this server believes it is
+// the leader.
+//
+func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	term, isLeader := rf.GetState()
+
+	rf.mu.Lock()
+	index := rf.getLastLogIndex() + 1
+
+	if isLeader == false {
+		rf.mu.Unlock()
+		return index, term, isLeader
+	}
+	// append log to log slice
+	entry := &LogEntry{
+		Term:    rf.currentTerm,
+		Index:   rf.numLogs(),
+		Command: command,
+	}
+	rf.log = append(rf.log, entry)
+	rf.mu.Unlock()
+
+	rf.replicateLog()
 	return index, term, isLeader
 }
 
