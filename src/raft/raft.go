@@ -297,6 +297,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 			Command: entry.Command,
 		}
 		go func() {
+			DPrintf("Send applied messages: %v\n", msg)
 			rf.applyCh <- msg
 		}()
 	}
@@ -537,6 +538,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.log = append(rf.log, entry)
 	rf.mu.Unlock()
 
+	DPrintf("Start command(%v, %v)", rf.me, command)
 	rf.replicateLog()
 	return index, term, isLeader
 }
@@ -622,12 +624,12 @@ func (rf *Raft) convertToLeader() {
 				startTime := time.Now()
 				ret := rf.sendAppendEntries(idx, args, reply, RPC_TIMEOUT)
 				elapsed := time.Since(startTime)
-				DPrintf("sendAppendEntries(%v => %v) took %s", rf.me, idx, elapsed)
+				DPrintf("send heart beat(%v => %v) took %s", rf.me, idx, elapsed)
 
 				rf.mu.Lock()
 
 				if ret == true {
-					DPrintf("AppendEntries(%v => %v) success", rf.me, idx)
+					DPrintf("heart beat (%v => %v) success", rf.me, idx)
 					if rf.state != LEADER {
 						rf.mu.Unlock()
 						return
