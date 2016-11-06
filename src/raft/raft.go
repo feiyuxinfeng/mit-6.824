@@ -143,6 +143,21 @@ func (rf *Raft) getPrevLogTerm(idx int) int {
 	}
 }
 
+func (rf *Raft) applyLogs() {
+	for rf.commitIndex > rf.lastApplied {
+		rf.lastApplied++
+		entry := rf.log[rf.lastApplied]
+		msg := ApplyMsg{
+			Index:   entry.Index,
+			Command: entry.Command,
+		}
+		go func() {
+			DPrintf("Send applied messages: %v\n", msg)
+			rf.applyCh <- msg
+		}()
+	}
+}
+
 func (rf *Raft) updateTimer() {
 	if !rf.timer.Stop() {
 		select {
@@ -291,18 +306,8 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.commitIndex = args.LeaderCommit
 	}
 	// all server 1
-	for rf.commitIndex > rf.lastApplied {
-		rf.lastApplied++
-		entry := rf.log[rf.lastApplied]
-		msg := ApplyMsg{
-			Index:   entry.Index,
-			Command: entry.Command,
-		}
-		go func() {
-			DPrintf("Send applied messages: %v\n", msg)
-			rf.applyCh <- msg
-		}()
-	}
+	rf.applyLogs()
+
 	rf.updateTimer()
 	reply.Success = true
 	reply.Term = rf.currentTerm
@@ -549,18 +554,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 		rf.commitIndex = entry.Index
 
-		for rf.commitIndex > rf.lastApplied {
-			rf.lastApplied++
-			entry := rf.log[rf.lastApplied]
-			msg := ApplyMsg{
-				Index:   entry.Index,
-				Command: entry.Command,
-			}
-			go func() {
-				// DPrintf("Send applied messages: %v\n", msg)
-				rf.applyCh <- msg
-			}()
-		}
+		rf.applyLogs()
 	} else {
 		index = -1
 	}
