@@ -287,10 +287,12 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 	// 5
 	if args.LeaderCommit > rf.commitIndex {
+		DPrintf("Update commitid %v => %v, last applied %v", rf.commitIndex, args.LeaderCommit, rf.lastApplied)
 		rf.commitIndex = args.LeaderCommit
 	}
 	// all server 1
-	for ; rf.commitIndex > rf.lastApplied; rf.lastApplied++ {
+	for rf.commitIndex > rf.lastApplied {
+		rf.lastApplied++
 		entry := rf.log[rf.lastApplied]
 		msg := ApplyMsg{
 			Index:   entry.Index,
@@ -449,6 +451,7 @@ func (rf *Raft) replicateLog() bool {
 
 					LeaderCommit: rf.commitIndex,
 				}
+				DPrintf("server %v args: %v", idx, args)
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
@@ -464,6 +467,7 @@ func (rf *Raft) replicateLog() bool {
 				}
 
 				if ok == true {
+					// DPrintf("Success: %v", reply.Success)
 					if reply.Term > rf.currentTerm {
 						// convert to follower
 						rf.convertToFollower(reply.Term, idx)
@@ -475,8 +479,8 @@ func (rf *Raft) replicateLog() bool {
 						if reply.Success == false {
 							rf.nextIndex[idx]--
 						} else {
-							rf.nextIndex[idx] = args.PrevLogIndex + 1
-							rf.matchIndex[idx] = args.PrevLogIndex
+							rf.nextIndex[idx] = nextIdx + 1
+							rf.matchIndex[idx] = nextIdx
 							rf.mu.Unlock()
 
 							retChan <- true
@@ -538,8 +542,29 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.log = append(rf.log, entry)
 	rf.mu.Unlock()
 
-	DPrintf("Start command(%v, %v)", rf.me, command)
-	rf.replicateLog()
+	DPrintf("Start command(%v, %v, %v)", rf.me, command, entry)
+	if rf.replicateLog() {
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+
+		rf.commitIndex = entry.Index
+
+		for rf.commitIndex > rf.lastApplied {
+			rf.lastApplied++
+			entry := rf.log[rf.lastApplied]
+			msg := ApplyMsg{
+				Index:   entry.Index,
+				Command: entry.Command,
+			}
+			go func() {
+				// DPrintf("Send applied messages: %v\n", msg)
+				rf.applyCh <- msg
+			}()
+		}
+	} else {
+		index = -1
+	}
+	DPrintf("start command finished(%v, %v, %v))", index, term, isLeader)
 	return index, term, isLeader
 }
 
@@ -621,15 +646,15 @@ func (rf *Raft) convertToLeader() {
 				reply := &AppendEntriesReply{}
 
 				// DPrintf("send AppendEntries(%v => %v)", rf.me, idx)
-				startTime := time.Now()
+				// startTime := time.Now()
 				ret := rf.sendAppendEntries(idx, args, reply, RPC_TIMEOUT)
-				elapsed := time.Since(startTime)
-				DPrintf("send heart beat(%v => %v) took %s", rf.me, idx, elapsed)
+				// elapsed := time.Since(startTime)
+				// DPrintf("send heart beat(%v => %v) took %s", rf.me, idx, elapsed)
 
 				rf.mu.Lock()
 
 				if ret == true {
-					DPrintf("heart beat (%v => %v) success", rf.me, idx)
+					// DPrintf("heart beat (%v => %v) success", rf.me, idx)
 					if rf.state != LEADER {
 						rf.mu.Unlock()
 						return
@@ -650,7 +675,7 @@ func (rf *Raft) convertToLeader() {
 						}
 					}
 				} else {
-					DPrintf("AppendEntries(%v => %v) fails", rf.me, idx)
+					// DPrintf("AppendEntries(%v => %v) fails", rf.me, idx)
 					if isAlive == true {
 						isAlive = false
 						rf.numAliveNodes--
