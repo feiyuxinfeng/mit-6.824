@@ -112,7 +112,7 @@ type Raft struct {
 }
 
 func (rf *Raft) numLogs() int {
-	return len(rf.log)
+	return len(rf.log) - 1
 }
 
 func (rf *Raft) getLastLogIndex() int {
@@ -121,7 +121,7 @@ func (rf *Raft) getLastLogIndex() int {
 
 func (rf *Raft) getLastLogTerm() int {
 	lastLogIndex := len(rf.log) - 1
-	if lastLogIndex == -1 {
+	if lastLogIndex == 0 {
 		return -1
 	} else {
 		return rf.log[lastLogIndex].Term
@@ -136,7 +136,7 @@ func (rf *Raft) getPrevLogIndex(idx int) int {
 func (rf *Raft) getPrevLogTerm(idx int) int {
 	prevLogIndex := rf.nextIndex[idx] - 1
 	// DPrintf("prevLogIndex: %s", prevLogIndex)
-	if prevLogIndex == -1 {
+	if prevLogIndex == 0 {
 		return -1
 	} else {
 		return rf.log[prevLogIndex].Term
@@ -151,6 +151,7 @@ func (rf *Raft) applyLogs() {
 			Index:   entry.Index,
 			Command: entry.Command,
 		}
+		// apply message is used for test, so don't block the process
 		go func() {
 			DPrintf("Send applied messages: %v\n", msg)
 			rf.applyCh <- msg
@@ -282,15 +283,19 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.convertToFollower(args.Term, args.LeaderId)
 	}
 	// 2
-	if len(rf.log) < args.PrevLogIndex+1 {
+	lastLogIndex := rf.getLastLogIndex()
+	// lastLogTerm := rf.getLastLogTerm()
+	if lastLogIndex < args.PrevLogIndex {
 		reply.Success = false
 		reply.Term = rf.currentTerm
 		return
 	}
-	if len(rf.log) > 0 && args.PrevLogIndex >= 0 && rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-		reply.Success = false
-		reply.Term = rf.currentTerm
-		return
+	if args.PrevLogIndex > 0 {
+		if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+			reply.Success = false
+			reply.Term = rf.currentTerm
+			return
+		}
 	}
 	if len(args.Entries) > 0 {
 		// 3
@@ -302,7 +307,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 	// 5
 	if args.LeaderCommit > rf.commitIndex {
-		DPrintf("Update commitid %v => %v, last applied %v", rf.commitIndex, args.LeaderCommit, rf.lastApplied)
+		// DPrintf("Update commitid %v => %v, last applied %v", rf.commitIndex, args.LeaderCommit, rf.lastApplied)
 		rf.commitIndex = args.LeaderCommit
 	}
 	// all server 1
@@ -456,7 +461,7 @@ func (rf *Raft) replicateLog() bool {
 
 					LeaderCommit: rf.commitIndex,
 				}
-				DPrintf("server %v args: %v", idx, args)
+				// DPrintf("server %v args: %v", idx, args)
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
@@ -541,7 +546,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// append log to log slice
 	entry := &LogEntry{
 		Term:    rf.currentTerm,
-		Index:   rf.numLogs(),
+		Index:   rf.getLastLogIndex() + 1,
 		Command: command,
 	}
 	rf.log = append(rf.log, entry)
@@ -783,10 +788,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.currentTerm = 0
 	rf.voteFor = VOTENULL
-	rf.log = make([]*LogEntry, 0)
+	rf.log = make([]*LogEntry, 1)
 
-	rf.commitIndex = -1
-	rf.lastApplied = -1
+	rf.commitIndex = 0
+	rf.lastApplied = 0
 
 	rf.state = FOLLOWER
 
