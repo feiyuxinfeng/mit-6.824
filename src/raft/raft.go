@@ -60,7 +60,8 @@ const (
 	CANDIDATE
 )
 
-const RPC_TIMEOUT = 200
+const RPC_TIMEOUT = 200     // 200 milliseconds
+const REPLICATE_TIMEOUT = 5 // 5 seconds
 
 func (state NodeState) String() string {
 	switch state {
@@ -109,6 +110,7 @@ type Raft struct {
 	numAliveNodes int
 
 	applyCh chan ApplyMsg
+	applyMu sync.Mutex
 }
 
 func (rf *Raft) numLogs() int {
@@ -144,6 +146,8 @@ func (rf *Raft) getPrevLogTerm(idx int) int {
 }
 
 func (rf *Raft) applyLogs() {
+	var messages []ApplyMsg
+
 	for rf.commitIndex > rf.lastApplied {
 		rf.lastApplied++
 		entry := rf.log[rf.lastApplied]
@@ -151,12 +155,17 @@ func (rf *Raft) applyLogs() {
 			Index:   entry.Index,
 			Command: entry.Command,
 		}
-		// apply message is used for test, so don't block the process
-		go func() {
+		messages = append(messages, msg)
+	}
+	go func() {
+		rf.applyMu.Lock()
+		defer rf.applyMu.Unlock()
+
+		for _, msg := range messages {
 			DPrintf("Server %v Send applied messages: %v\n", rf.me, msg)
 			rf.applyCh <- msg
-		}()
-	}
+		}
+	}()
 }
 
 func (rf *Raft) updateTimer() {
@@ -437,6 +446,8 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 }
 
 func (rf *Raft) replicateLog() bool {
+	t0 := time.Now()
+
 	rf.mu.Lock()
 	totalServers := len(rf.peers)
 	me := rf.me
@@ -449,6 +460,12 @@ func (rf *Raft) replicateLog() bool {
 		}
 		go func(idx int) {
 			for {
+				//timeout
+				if time.Since(t0).Seconds() >= REPLICATE_TIMEOUT {
+					retChan <- false
+					return
+				}
+
 				rf.mu.Lock()
 				nextIdx := rf.nextIndex[idx]
 				args := AppendEntriesArgs{
@@ -489,8 +506,8 @@ func (rf *Raft) replicateLog() bool {
 						if reply.Success == false {
 							rf.nextIndex[idx]--
 						} else {
-							rf.nextIndex[idx] = nextIdx + 1
-							rf.matchIndex[idx] = nextIdx
+							rf.nextIndex[idx] = nextIdx + len(args.Entries)
+							rf.matchIndex[idx] = nextIdx + len(args.Entries) - 1
 							rf.mu.Unlock()
 
 							retChan <- true
@@ -560,9 +577,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.commitIndex = entry.Index
 
 		rf.applyLogs()
-	} else {
-		index = -1
 	}
+	// else {
+	// 	index = -1
+	// }
 	DPrintf("start command finished(%v, %v, %v))", index, term, isLeader)
 	return index, term, isLeader
 }
@@ -604,9 +622,6 @@ func (rf *Raft) convertToLeader() {
 		rf.nextIndex[i] = rf.getLastLogIndex() + 1
 	}
 	rf.matchIndex = make([]int, len(rf.peers))
-	for i := 0; i < len(rf.peers); i++ {
-		rf.matchIndex[i] = -1
-	}
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
