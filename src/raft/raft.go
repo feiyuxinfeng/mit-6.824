@@ -153,7 +153,7 @@ func (rf *Raft) applyLogs() {
 		}
 		// apply message is used for test, so don't block the process
 		go func() {
-			DPrintf("Send applied messages: %v\n", msg)
+			DPrintf("Server %v Send applied messages: %v\n", rf.me, msg)
 			rf.applyCh <- msg
 		}()
 	}
@@ -469,7 +469,7 @@ func (rf *Raft) replicateLog() bool {
 
 				rf.mu.Lock()
 
-				if rf.state != LEADER {
+				if rf.state != LEADER || rf.currentTerm != args.Term {
 					rf.mu.Unlock()
 
 					retChan <- false
