@@ -103,7 +103,8 @@ type Raft struct {
 
 	state             NodeState
 	electionTimeoutMs int64
-	timer             *time.Timer
+	//TODO: choose a random value every term, TestRejoin
+	timer *time.Timer
 
 	heartbeatTimeoutMs int64
 
@@ -395,7 +396,8 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	}
 	lastLogIndex := rf.getLastLogIndex()
 	lastLogTerm := rf.getLastLogTerm()
-	if args.LastLogIndex < lastLogIndex || args.LastLogTerm < lastLogTerm {
+	if args.LastLogTerm < lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex < lastLogIndex) {
+		DPrintf("Server %v's log is older than server %v, reject grant.", args.CandidateId, rf.me)
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
 		return
@@ -569,7 +571,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.log = append(rf.log, entry)
 	rf.mu.Unlock()
 
-	DPrintf("Start command(%v, %v, %v)", rf.me, command, entry)
+	DPrintf("Server %v Start command %v index %v, entry: %v", rf.me, command, index, entry)
 	if rf.replicateLog() {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
@@ -581,7 +583,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// else {
 	// 	index = -1
 	// }
-	DPrintf("start command finished(%v, %v, %v))", index, term, isLeader)
+	DPrintf("Server %v start command finished(%v, %v, %v))", rf.me, index, term, isLeader)
 	return index, term, isLeader
 }
 
