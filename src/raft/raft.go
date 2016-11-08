@@ -34,6 +34,10 @@ func init() {
 	rand.Seed(time.Now().UTC().UnixNano())
 }
 
+func getRandomElectionTimeout() int64 {
+	return 150 + rand.Int63n(150)
+}
+
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -167,6 +171,14 @@ func (rf *Raft) applyLogs() {
 			rf.applyCh <- msg
 		}
 	}()
+}
+
+func (rf *Raft) reinitializeTimer() {
+	rf.electionTimeoutMs = getRandomElectionTimeout()
+	DPrintf("Reinitialize Server(%v) election timeout to %v ms", rf.me, rf.electionTimeoutMs)
+
+	// rf.timer = time.NewTimer(time.Duration(rf.electionTimeoutMs) * time.Millisecond)
+	rf.updateTimer()
 }
 
 func (rf *Raft) updateTimer() {
@@ -597,17 +609,14 @@ func (rf *Raft) Kill() {
 	// Your code here, if desired.
 }
 
-func getRandomElectionTimeout() int64 {
-	return 150 + rand.Int63n(150)
-}
-
 func (rf *Raft) convertToFollower(term int, voteFor int) {
 	DPrintf("Convert server %v's state(%v => follower) Term(%v => %v)", rf.me, rf.state.String(), rf.currentTerm, term)
 
 	rf.state = FOLLOWER
 	rf.currentTerm = term
 	rf.voteFor = voteFor
-	rf.updateTimer()
+	// rf.updateTimer()
+	rf.reinitializeTimer()
 	go rf.leaderElection()
 }
 
@@ -730,7 +739,8 @@ func (rf *Raft) leaderElection() {
 		rf.mu.Lock()
 		prevTerm = rf.currentTerm
 
-		rf.updateTimer()
+		// rf.updateTimer()
+		rf.reinitializeTimer()
 		rf.state = CANDIDATE
 		rf.currentTerm++
 		rf.voteFor = rf.me
