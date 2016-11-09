@@ -115,7 +115,8 @@ type Raft struct {
 	numAliveNodes int
 
 	applyCh chan ApplyMsg
-	applyMu sync.Mutex
+
+	startMu sync.Mutex
 }
 
 func (rf *Raft) numLogs() int {
@@ -151,8 +152,6 @@ func (rf *Raft) getPrevLogTerm(idx int) int {
 }
 
 func (rf *Raft) applyLogs() {
-	var messages []ApplyMsg
-
 	for rf.commitIndex > rf.lastApplied {
 		rf.lastApplied++
 		entry := rf.log[rf.lastApplied]
@@ -160,17 +159,10 @@ func (rf *Raft) applyLogs() {
 			Index:   entry.Index,
 			Command: entry.Command,
 		}
-		messages = append(messages, msg)
+		// can't use new goroutine to send the message
+		// because the order will be shuffled
+		rf.applyCh <- msg
 	}
-	go func() {
-		rf.applyMu.Lock()
-		defer rf.applyMu.Unlock()
-
-		for _, msg := range messages {
-			DPrintf("Server %v Send applied messages: %v\n", rf.me, msg)
-			rf.applyCh <- msg
-		}
-	}()
 }
 
 func (rf *Raft) reinitializeTimer() {
@@ -320,17 +312,37 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		}
 	}
 	if len(args.Entries) > 0 {
-		// 3
-		rf.log = rf.log[:args.PrevLogIndex+1]
-		// 4
-		if args.Entries != nil {
-			rf.log = append(rf.log, args.Entries...)
+		// 3, 4 overwrite conflict entry and append new entries
+		for i := 0; i < len(args.Entries); i++ {
+			idx1 := args.PrevLogIndex + 1 + i
+			idx2 := i
+			if idx1 > lastLogIndex {
+				remainEntries := args.Entries[idx2:]
+				rf.log = append(rf.log, remainEntries...)
+				break
+			}
+			entry1 := rf.log[idx1]
+			entry2 := args.Entries[idx2]
+			if entry1.Term != entry2.Term {
+				rf.log[idx1] = entry2
+			}
+
 		}
+		// // 3
+		// rf.log = rf.log[:args.PrevLogIndex+1]
+		// // 4
+		// if args.Entries != nil {
+		// 	rf.log = append(rf.log, args.Entries...)
+		// }
 	}
 	// 5
 	if args.LeaderCommit > rf.commitIndex {
-		// DPrintf("Update commitid %v => %v, last applied %v", rf.commitIndex, args.LeaderCommit, rf.lastApplied)
-		rf.commitIndex = args.LeaderCommit
+		DPrintf("Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, args.LeaderCommit, rf.lastApplied)
+		minIndex := args.LeaderCommit
+		if minIndex > rf.getLastLogIndex() {
+			minIndex = rf.getLastLogIndex()
+		}
+		rf.commitIndex = minIndex
 	}
 	// all server 1
 	rf.applyLogs()
@@ -565,6 +577,9 @@ func (rf *Raft) replicateLog() bool {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	// rf.startMu.Lock()
+	// defer rf.startMu.Unlock()
+
 	term, isLeader := rf.GetState()
 
 	rf.mu.Lock()
@@ -588,14 +603,16 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
 
-		rf.commitIndex = entry.Index
+		if rf.commitIndex < entry.Index {
+			rf.commitIndex = entry.Index
 
-		rf.applyLogs()
+			rf.applyLogs()
+		}
 	}
 	// else {
 	// 	index = -1
 	// }
-	DPrintf("Server %v start command finished(%v, %v, %v))", rf.me, index, term, isLeader)
+	DPrintf("Server %v finished command %v Index: %v, Term :%v", rf.me, command, index, term)
 	return index, term, isLeader
 }
 
