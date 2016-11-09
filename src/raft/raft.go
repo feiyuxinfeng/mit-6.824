@@ -107,8 +107,7 @@ type Raft struct {
 
 	state             NodeState
 	electionTimeoutMs int64
-	//TODO: choose a random value every term, TestRejoin
-	timer *time.Timer
+	timer             *time.Timer
 
 	heartbeatTimeoutMs int64
 
@@ -163,6 +162,14 @@ func (rf *Raft) applyLogs() {
 		// because the order will be shuffled
 		rf.applyCh <- msg
 	}
+}
+
+func (rf *Raft) initializeTimer() {
+	rf.electionTimeoutMs = getRandomElectionTimeout()
+	DPrintf("Server(%v) election timeout %v ms", rf.me, rf.electionTimeoutMs)
+
+	d := time.Duration(rf.electionTimeoutMs) * time.Millisecond
+	rf.timer = time.NewTimer(d)
 }
 
 func (rf *Raft) reinitializeTimer() {
@@ -227,8 +234,8 @@ func (rf *Raft) persist() {
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
 
 	w := new(bytes.Buffer)
 	e := gob.NewEncoder(w)
@@ -830,6 +837,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here.
 
+	rf.applyCh = applyCh
+
 	rf.currentTerm = 0
 	rf.voteFor = VOTENULL
 	rf.log = make([]*LogEntry, 1)
@@ -839,10 +848,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.state = FOLLOWER
 
-	rf.electionTimeoutMs = getRandomElectionTimeout()
-	DPrintf("Server(%v) election timeout %v ms", me, rf.electionTimeoutMs)
-
-	rf.timer = time.NewTimer(time.Duration(rf.electionTimeoutMs) * time.Millisecond)
+	rf.initializeTimer()
 	rf.heartbeatTimeoutMs = 100
 	// goroute to handle leader election
 	go rf.leaderElection()
@@ -850,6 +856,5 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	rf.applyCh = applyCh
 	return rf
 }
