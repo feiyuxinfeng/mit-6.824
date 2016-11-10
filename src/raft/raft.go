@@ -234,9 +234,6 @@ func (rf *Raft) persist() {
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
 
-	// rf.mu.Lock()
-	// defer rf.mu.Unlock()
-
 	w := new(bytes.Buffer)
 	e := gob.NewEncoder(w)
 	e.Encode(rf.currentTerm)
@@ -244,6 +241,9 @@ func (rf *Raft) persist() {
 	e.Encode(rf.log)
 	data := w.Bytes()
 	rf.persister.SaveRaftState(data)
+
+	// rf.dPrintSavedState()
+	// DPrintf("server %v memory state=> term: %v, lastLogIndex: %v, voteFor: %v", rf.me, rf.currentTerm, rf.getLastLogIndex(), rf.voteFor)
 }
 
 //
@@ -258,14 +258,25 @@ func (rf *Raft) readPersist(data []byte) {
 	// d.Decode(&rf.yyy)
 	// DPrintf("Persister data: %v", data)
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
 	d.Decode(&rf.currentTerm)
 	d.Decode(&rf.voteFor)
 	d.Decode(&rf.log)
+}
+
+// print the saved state(for debug)
+func (rf *Raft) dPrintSavedState() {
+	data := rf.persister.ReadRaftState()
+	var term, voteFor int
+	var log []*LogEntry
+
+	r := bytes.NewBuffer(data)
+	d := gob.NewDecoder(r)
+	d.Decode(&term)
+	d.Decode(&voteFor)
+	d.Decode(&log)
+	DPrintf("server %v saved state=> term: %v, lastLogIndex: %v, voteFor: %v", rf.me, term, len(log)-1, voteFor)
 }
 
 type AppendEntriesArgs struct {
@@ -288,6 +299,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	// Your code here.
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	// 1
 	if args.Term < rf.currentTerm {
@@ -407,6 +419,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here.
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	// 1
 	if args.Term < rf.currentTerm {
@@ -603,6 +616,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Command: command,
 	}
 	rf.log = append(rf.log, entry)
+	rf.persist()
+
 	rf.mu.Unlock()
 
 	DPrintf("Server %v Start command %v index %v, entry: %v", rf.me, command, index, entry)
@@ -636,6 +651,8 @@ func (rf *Raft) Kill() {
 func (rf *Raft) convertToFollower(term int, voteFor int) {
 	DPrintf("Convert server %v's state(%v => follower) Term(%v => %v)", rf.me, rf.state.String(), rf.currentTerm, term)
 
+	defer rf.persist()
+
 	rf.state = FOLLOWER
 	rf.currentTerm = term
 	rf.voteFor = voteFor
@@ -646,6 +663,7 @@ func (rf *Raft) convertToFollower(term int, voteFor int) {
 
 func (rf *Raft) convertToLeader() {
 	DPrintf("Convert server %v's state(%v => leader) Term(%v)", rf.me, rf.state.String(), rf.currentTerm)
+	defer rf.persist()
 
 	rf.state = LEADER
 	rf.voteFor = rf.me // prevent RequestVote to leader for this term
@@ -769,6 +787,8 @@ func (rf *Raft) leaderElection() {
 		rf.currentTerm++
 		rf.voteFor = rf.me
 
+		rf.persist()
+
 		args := RequestVoteArgs{
 			Term:         rf.currentTerm,
 			CandidateId:  rf.me,
@@ -842,6 +862,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.currentTerm = 0
 	rf.voteFor = VOTENULL
 	rf.log = make([]*LogEntry, 1)
+	// in order to work well with gob, the first element can't be nil
+	rf.log[0] = &LogEntry{}
 
 	rf.commitIndex = 0
 	rf.lastApplied = 0
@@ -853,6 +875,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
+	DPrintf("server %v state=> term: %v, log: %v, voteFor: %v", rf.me, rf.currentTerm, rf.log, rf.voteFor)
 
 	// goroute to handle leader election
 	go rf.leaderElection()
