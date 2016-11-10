@@ -850,11 +850,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.initializeTimer()
 	rf.heartbeatTimeoutMs = 100
-	// goroute to handle leader election
-	go rf.leaderElection()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
+
+	// goroute to handle leader election
+	go rf.leaderElection()
 
 	return rf
 }
