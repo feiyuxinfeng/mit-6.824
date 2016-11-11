@@ -661,21 +661,7 @@ func (rf *Raft) convertToFollower(term int, voteFor int) {
 	go rf.leaderElection()
 }
 
-func (rf *Raft) convertToLeader() {
-	DPrintf("Convert server %v's state(%v => leader) Term(%v)", rf.me, rf.state.String(), rf.currentTerm)
-	defer rf.persist()
-
-	rf.state = LEADER
-	rf.voteFor = rf.me // prevent RequestVote to leader for this term
-	rf.disableTimer()
-	rf.numAliveNodes = len(rf.peers)
-
-	rf.nextIndex = make([]int, len(rf.peers))
-	for i := 0; i < len(rf.peers); i++ {
-		rf.nextIndex[i] = rf.getLastLogIndex() + 1
-	}
-	rf.matchIndex = make([]int, len(rf.peers))
-
+func (rf *Raft) broadcastHeartbeat() {
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
 			continue
@@ -752,6 +738,23 @@ func (rf *Raft) convertToLeader() {
 			}
 		}(rf, i)
 	}
+}
+
+func (rf *Raft) convertToLeader() {
+	DPrintf("Convert server %v's state(%v => leader) Term(%v)", rf.me, rf.state.String(), rf.currentTerm)
+	defer rf.persist()
+
+	rf.state = LEADER
+	rf.voteFor = rf.me // prevent RequestVote to leader for this term
+	rf.disableTimer()
+	rf.numAliveNodes = len(rf.peers)
+
+	rf.nextIndex = make([]int, len(rf.peers))
+	for i := 0; i < len(rf.peers); i++ {
+		rf.nextIndex[i] = rf.getLastLogIndex() + 1
+	}
+	rf.matchIndex = make([]int, len(rf.peers))
+	rf.broadcastHeartbeat()
 }
 
 func (rf *Raft) leaderElection() {
