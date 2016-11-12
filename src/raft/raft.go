@@ -722,11 +722,12 @@ func (rf *Raft) broadcastHeartbeat() {
 						// convert to follower
 						rf.convertToFollower(reply.Term, VOTENULL)
 						close(quitChan)
-					} else {
-						if reply.Success == false {
-							rf.nextIndex[idx]--
-						}
 					}
+					// else {
+					// 	if reply.Success == false {
+					// 		rf.nextIndex[idx]--
+					// 	}
+					// }
 				} else {
 					// DPrintf("AppendEntries(%v => %v) fails", rf.me, idx)
 					if isAlive == true {
