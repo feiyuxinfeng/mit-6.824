@@ -38,6 +38,22 @@ func getRandomElectionTimeout() int64 {
 	return 150 + rand.Int63n(150)
 }
 
+func intMax(i1, i2 int) int {
+	if i1 > i2 {
+		return i1
+	} else {
+		return i2
+	}
+}
+
+func intMin(i1, i2 int) int {
+	if i1 < i2 {
+		return i1
+	} else {
+		return i2
+	}
+}
+
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -293,6 +309,9 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term    int
 	Success bool
+
+	// hint for leader to update nextIndex
+	ConflictIndex int
 }
 
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -321,12 +340,34 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	if lastLogIndex < args.PrevLogIndex {
 		reply.Success = false
 		reply.Term = rf.currentTerm
+		reply.ConflictIndex = lastLogIndex
+		if reply.ConflictIndex < 1 {
+			reply.ConflictIndex = 1
+		}
 		return
 	}
 	if args.PrevLogIndex > 0 {
-		if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		term := rf.log[args.PrevLogIndex].Term
+		if term != args.PrevLogTerm {
 			reply.Success = false
 			reply.Term = rf.currentTerm
+
+			// optimization for log consist check,
+			// we will append first log index of conflict term to reply message
+			reply.ConflictIndex = args.PrevLogIndex
+			if reply.ConflictIndex < 1 {
+				reply.ConflictIndex = 1
+			}
+
+			conflictTerm := args.PrevLogTerm
+			if term < conflictTerm {
+				conflictTerm = term
+			}
+			for i := 1; i <= args.PrevLogIndex; i++ {
+				if rf.log[i].Term == conflictTerm {
+					reply.ConflictIndex = i
+				}
+			}
 			return
 		}
 	}
@@ -550,7 +591,11 @@ func (rf *Raft) replicateLog() bool {
 						return
 					} else {
 						if reply.Success == false {
-							rf.nextIndex[idx]--
+							// unconsistent log, so we need decrease nextIndex
+							if reply.ConflictIndex < 1 {
+								DPrintf("=========conflict index: %v", reply.ConflictIndex)
+							}
+							rf.nextIndex[idx] = intMax(1, reply.ConflictIndex)
 						} else {
 							rf.nextIndex[idx] = nextIdx + len(args.Entries)
 							rf.matchIndex[idx] = nextIdx + len(args.Entries) - 1
