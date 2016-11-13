@@ -142,7 +142,7 @@ func (rf *Raft) getPrevLogIndex(idx int) int {
 
 func (rf *Raft) getPrevLogTerm(idx int) int {
 	prevLogIndex := rf.nextIndex[idx] - 1
-	// DPrintf("prevLogIndex: %s", prevLogIndex)
+	// DPrintf("server %v getPrevLogTerm prevLogIndex: %v", idx, prevLogIndex)
 	if prevLogIndex == 0 {
 		return -1
 	} else {
@@ -879,7 +879,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-	DPrintf("server %v state=> term: %v, log: %v, voteFor: %v", rf.me, rf.currentTerm, rf.log, rf.voteFor)
+	DPrintf("server %v state=> term: %v, lastLogIndex: %v, voteFor: %v", rf.me, rf.currentTerm, rf.getLastLogIndex(), rf.voteFor)
 
 	// goroute to handle leader election
 	go rf.leaderElection()
