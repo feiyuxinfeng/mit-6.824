@@ -143,7 +143,7 @@ func (rf *Raft) getLastLogIndex() int {
 }
 
 func (rf *Raft) getLastLogTerm() int {
-	lastLogIndex := len(rf.log) - 1
+	lastLogIndex := rf.getLastLogIndex()
 	if lastLogIndex == 0 {
 		return -1
 	} else {
@@ -157,7 +157,7 @@ func (rf *Raft) getPrevLogIndex(idx int) int {
 }
 
 func (rf *Raft) getPrevLogTerm(idx int) int {
-	prevLogIndex := rf.nextIndex[idx] - 1
+	prevLogIndex := rf.getPrevLogIndex(idx)
 	// DPrintf("server %v getPrevLogTerm prevLogIndex: %v", idx, prevLogIndex)
 	if prevLogIndex == 0 {
 		return -1
