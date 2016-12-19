@@ -192,7 +192,6 @@ func (rf *Raft) reinitializeTimer() {
 	rf.electionTimeoutMs = getRandomElectionTimeout()
 	DPrintf("Reinitialize Server(%v) election timeout to %v ms", rf.me, rf.electionTimeoutMs)
 
-	// rf.timer = time.NewTimer(time.Duration(rf.electionTimeoutMs) * time.Millisecond)
 	rf.updateTimer()
 }
 
@@ -388,12 +387,6 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 			}
 
 		}
-		// // 3
-		// rf.log = rf.log[:args.PrevLogIndex+1]
-		// // 4
-		// if args.Entries != nil {
-		// 	rf.log = append(rf.log, args.Entries...)
-		// }
 	}
 	// 5
 	if args.LeaderCommit > rf.commitIndex {
