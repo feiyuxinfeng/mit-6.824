@@ -190,7 +190,7 @@ func (rf *Raft) initializeTimer() {
 
 func (rf *Raft) reinitializeTimer() {
 	rf.electionTimeoutMs = getRandomElectionTimeout()
-	DPrintf("Reinitialize Server(%v) election timeout to %v ms", rf.me, rf.electionTimeoutMs)
+	// DPrintf("Reinitialize Server(%v) election timeout to %v ms", rf.me, rf.electionTimeoutMs)
 
 	rf.updateTimer()
 }
@@ -577,7 +577,7 @@ func (rf *Raft) replicateLog() bool {
 					// DPrintf("Success: %v", reply.Success)
 					if reply.Term > rf.currentTerm {
 						// convert to follower
-						rf.convertToFollower(reply.Term, idx)
+						rf.convertToFollower(reply.Term, VOTENULL)
 						rf.mu.Unlock()
 
 						retChan <- false
