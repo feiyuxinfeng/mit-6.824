@@ -388,14 +388,19 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 		}
 	}
+
+	consistIndex := args.PrevLogIndex + len(args.Entries)
+	updateCommitIdx := intMin(args.LeaderCommit, consistIndex)
+
 	// 5
-	if args.LeaderCommit > rf.commitIndex {
-		DPrintf("Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, args.LeaderCommit, rf.lastApplied)
-		minIndex := args.LeaderCommit
-		if minIndex > rf.getLastLogIndex() {
-			minIndex = rf.getLastLogIndex()
-		}
-		rf.commitIndex = minIndex
+	if updateCommitIdx > rf.commitIndex {
+		DPrintf("Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, updateCommitIdx, rf.lastApplied)
+		// minIndex := args.LeaderCommit
+		// if minIndex > rf.getLastLogIndex() {
+		// 	minIndex = rf.getLastLogIndex()
+		// }
+		// rf.commitIndex = minIndex
+		rf.commitIndex = updateCommitIdx
 	}
 	// all server 1
 	rf.applyLogs()
