@@ -663,16 +663,18 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
 
+		DPrintf("Sucess: Server %v replicate command %v Index: %v, Term :%v", rf.me, command, index, term)
 		if rf.commitIndex < entry.Index {
+			DPrintf("Leader Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, entry.Index, rf.lastApplied)
 			rf.commitIndex = entry.Index
-
-			rf.applyLogs()
 		}
+	} else {
+		DPrintf("FAIL: Server %v replicate command %v Index: %v, Term :%v", rf.me, command, index, term)
 	}
+	rf.applyLogs()
 	// else {
 	// 	index = -1
 	// }
-	DPrintf("Server %v finished command %v Index: %v, Term :%v", rf.me, command, index, term)
 	return index, term, isLeader
 }
 
