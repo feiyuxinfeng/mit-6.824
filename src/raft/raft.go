@@ -391,6 +391,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 	consistIndex := args.PrevLogIndex + len(args.Entries)
 	updateCommitIdx := intMin(args.LeaderCommit, consistIndex)
+	DPrintf("server %v ==> LeaderCommit: %v, localCommit: %v, consistIndex: %v, numEntry: %v", rf.me, args.LeaderCommit, rf.commitIndex, consistIndex, len(args.Entries))
 
 	// 5
 	if updateCommitIdx > rf.commitIndex {
@@ -563,7 +564,7 @@ func (rf *Raft) replicateLog() bool {
 
 					LeaderCommit: rf.commitIndex,
 				}
-				// DPrintf("server %v args: %v", idx, args)
+				DPrintf("server %v args: %v", idx, args)
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
