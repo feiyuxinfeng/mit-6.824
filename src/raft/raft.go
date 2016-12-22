@@ -595,8 +595,8 @@ func (rf *Raft) replicateLog() bool {
 							}
 							rf.nextIndex[idx] = intMax(1, reply.ConflictIndex)
 						} else {
-							rf.nextIndex[idx] = nextIdx + len(args.Entries)
-							rf.matchIndex[idx] = nextIdx + len(args.Entries) - 1
+							rf.nextIndex[idx] = intMax(rf.nextIndex[idx], nextIdx+len(args.Entries))
+							rf.matchIndex[idx] = rf.nextIndex[idx] - 1
 							rf.mu.Unlock()
 
 							retChan <- true
