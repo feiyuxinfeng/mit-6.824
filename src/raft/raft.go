@@ -708,6 +708,8 @@ func (rf *Raft) convertToFollower(term int, voteFor int) {
 }
 
 func (rf *Raft) broadcastHeartbeat() {
+	currentTerm := rf.currentTerm
+
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
 			continue
@@ -718,7 +720,7 @@ func (rf *Raft) broadcastHeartbeat() {
 			isAlive := true
 
 			ticker := time.NewTicker(time.Duration(rf.heartbeatTimeoutMs) * time.Millisecond)
-			for range ticker.C {
+			for ; ; <-ticker.C {
 				select {
 				case <-quitChan:
 					return
@@ -726,7 +728,7 @@ func (rf *Raft) broadcastHeartbeat() {
 				}
 
 				rf.mu.Lock()
-				if rf.state != LEADER {
+				if rf.state != LEADER || rf.currentTerm != currentTerm {
 					rf.mu.Unlock()
 					return
 				}
@@ -752,12 +754,12 @@ func (rf *Raft) broadcastHeartbeat() {
 
 				rf.mu.Lock()
 
+				if rf.state != LEADER || rf.currentTerm != currentTerm {
+					rf.mu.Unlock()
+					return
+				}
 				if ret == true {
 					// DPrintf("heart beat (%v => %v) success", rf.me, idx)
-					if rf.state != LEADER {
-						rf.mu.Unlock()
-						return
-					}
 
 					if isAlive == false {
 						isAlive = true
@@ -810,16 +812,15 @@ func (rf *Raft) leaderElection() {
 	rf.mu.Unlock()
 
 	var needExit int32 = 0
-	for {
+	for iter := 0; ; iter++ {
 		if atomic.LoadInt32(&needExit) == 1 {
 			break
 		}
+
 		rf.mu.Lock()
-		if prevTerm < rf.currentTerm-1 {
-			rf.mu.Unlock()
-			break
-		}
-		if rf.state == LEADER {
+		if (iter == 0 && rf.state != FOLLOWER) ||
+			(iter > 0 && rf.state != CANDIDATE) ||
+			(prevTerm < rf.currentTerm-1) {
 			rf.mu.Unlock()
 			break
 		}
@@ -855,7 +856,7 @@ func (rf *Raft) leaderElection() {
 				continue
 			}
 
-			go func(rf *Raft, idx int) {
+			go func(idx int, args RequestVoteArgs) {
 				reply := &RequestVoteReply{}
 				timeout := int64(float32(rf.electionTimeoutMs) * 0.8)
 				ret := rf.sendRequestVote(idx, args, reply, timeout)
@@ -882,7 +883,7 @@ func (rf *Raft) leaderElection() {
 						rf.convertToLeader()
 					}
 				}
-			}(rf, i)
+			}(i, args)
 		}
 	}
 }
