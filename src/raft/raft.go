@@ -388,14 +388,20 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 		}
 	}
+
+	consistIndex := args.PrevLogIndex + len(args.Entries)
+	updateCommitIdx := intMin(args.LeaderCommit, consistIndex)
+	DPrintf("server %v ==> LeaderCommit: %v, localCommit: %v, consistIndex: %v, numEntry: %v", rf.me, args.LeaderCommit, rf.commitIndex, consistIndex, len(args.Entries))
+
 	// 5
-	if args.LeaderCommit > rf.commitIndex {
-		DPrintf("Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, args.LeaderCommit, rf.lastApplied)
-		minIndex := args.LeaderCommit
-		if minIndex > rf.getLastLogIndex() {
-			minIndex = rf.getLastLogIndex()
-		}
-		rf.commitIndex = minIndex
+	if updateCommitIdx > rf.commitIndex {
+		DPrintf("Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, updateCommitIdx, rf.lastApplied)
+		// minIndex := args.LeaderCommit
+		// if minIndex > rf.getLastLogIndex() {
+		// 	minIndex = rf.getLastLogIndex()
+		// }
+		// rf.commitIndex = minIndex
+		rf.commitIndex = updateCommitIdx
 	}
 	// all server 1
 	rf.applyLogs()
@@ -558,7 +564,7 @@ func (rf *Raft) replicateLog() bool {
 
 					LeaderCommit: rf.commitIndex,
 				}
-				// DPrintf("server %v args: %v", idx, args)
+				DPrintf("server %v args: %v", idx, args)
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
@@ -590,8 +596,8 @@ func (rf *Raft) replicateLog() bool {
 							}
 							rf.nextIndex[idx] = intMax(1, reply.ConflictIndex)
 						} else {
-							rf.nextIndex[idx] = nextIdx + len(args.Entries)
-							rf.matchIndex[idx] = nextIdx + len(args.Entries) - 1
+							rf.nextIndex[idx] = intMax(rf.nextIndex[idx], nextIdx+len(args.Entries))
+							rf.matchIndex[idx] = rf.nextIndex[idx] - 1
 							rf.mu.Unlock()
 
 							retChan <- true
@@ -668,10 +674,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			DPrintf("Leader Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, entry.Index, rf.lastApplied)
 			rf.commitIndex = entry.Index
 		}
+		rf.applyLogs()
 	} else {
 		DPrintf("FAIL: Server %v replicate command %v Index: %v, Term :%v", rf.me, command, index, term)
 	}
-	rf.applyLogs()
 	// else {
 	// 	index = -1
 	// }
