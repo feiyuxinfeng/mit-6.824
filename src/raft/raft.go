@@ -673,10 +673,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			DPrintf("Leader Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, entry.Index, rf.lastApplied)
 			rf.commitIndex = entry.Index
 		}
+		rf.applyLogs()
 	} else {
 		DPrintf("FAIL: Server %v replicate command %v Index: %v, Term :%v", rf.me, command, index, term)
 	}
-	rf.applyLogs()
 	// else {
 	// 	index = -1
 	// }
