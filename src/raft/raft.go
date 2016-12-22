@@ -811,11 +811,7 @@ func (rf *Raft) leaderElection() {
 	prevTerm := rf.currentTerm - 1
 	rf.mu.Unlock()
 
-	var needExit int32 = 0
 	for iter := 0; ; iter++ {
-		if atomic.LoadInt32(&needExit) == 1 {
-			break
-		}
 
 		rf.mu.Lock()
 		if (iter == 0 && rf.state != FOLLOWER) ||
@@ -865,12 +861,10 @@ func (rf *Raft) leaderElection() {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					if rf.state != CANDIDATE || rf.currentTerm != args.Term {
-						atomic.StoreInt32(&needExit, 1)
 						return
 					}
 
 					if reply.Term > rf.currentTerm {
-						atomic.StoreInt32(&needExit, 1)
 						rf.convertToFollower(reply.Term, VOTENULL)
 						return
 					}
@@ -879,7 +873,6 @@ func (rf *Raft) leaderElection() {
 					}
 					// if get marjor vote,convert to leader
 					if atomic.LoadInt32(&numVote) > int32(len(rf.peers)/2) {
-						atomic.StoreInt32(&needExit, 1)
 						rf.convertToLeader()
 					}
 				}
