@@ -387,6 +387,8 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 			}
 
 		}
+		DPrintf("server %v <== %v receive log(%v-%v)", rf.me, args.LeaderId,
+			args.PrevLogIndex+1, args.PrevLogIndex+len(args.Entries))
 	}
 
 	consistIndex := args.PrevLogIndex + len(args.Entries)
