@@ -11,3 +11,6 @@
    4. 日志数组的第一个元素会被忽略,因为go的slice从0开始,但是raft的paper要求index
       从1开始.但是这个被忽略的元素不能微nil,这主要是为了应付gob
    5. 向applyCh写入的时候,不要使用异步,因为那样会打乱顺序
+   6. AppendEntries中不能删掉index比 =args.PrevLogIndex + len(args.Entries)= 大
+      的日志项, 因为这些日志项很可能是携带了更多日志的RPC创建的,因为网络等的原因,这
+      些RPC可能会先于当前RPC到达.
