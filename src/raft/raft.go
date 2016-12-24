@@ -34,6 +34,14 @@ func init() {
 	rand.Seed(time.Now().UTC().UnixNano())
 }
 
+func safeClose(ch chan bool) {
+	select {
+	case <-ch:
+	default:
+		close(ch)
+	}
+}
+
 func getRandomElectionTimeout() int64 {
 	return 150 + rand.Int63n(150)
 }
@@ -206,15 +214,6 @@ func (rf *Raft) updateTimer() {
 	rf.timer.Reset(d)
 }
 
-func (rf *Raft) disableTimer() {
-	if !rf.timer.Stop() {
-		select {
-		case <-rf.timer.C:
-		default:
-		}
-	}
-}
-
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
@@ -327,10 +326,8 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 
 	// all server 1
-	if args.Term > rf.currentTerm {
-		rf.convertToFollower(args.Term, args.LeaderId)
-	}
-	if args.Term == rf.currentTerm && rf.state == CANDIDATE {
+	if (args.Term > rf.currentTerm) ||
+		(args.Term == rf.currentTerm && rf.state == CANDIDATE) {
 		rf.convertToFollower(args.Term, args.LeaderId)
 	}
 	// 2
@@ -705,7 +702,7 @@ func (rf *Raft) convertToFollower(term int, voteFor int) {
 	rf.currentTerm = term
 	rf.voteFor = voteFor
 	// rf.updateTimer()
-	rf.reinitializeTimer()
+	rf.initializeTimer()
 	go rf.leaderElection()
 }
 
@@ -748,11 +745,11 @@ func (rf *Raft) broadcastHeartbeat() {
 
 				reply := &AppendEntriesReply{}
 
-				// DPrintf("send AppendEntries(%v => %v)", rf.me, idx)
+				// DPrintf("send heartbeat(%v => %v)", rf.me, idx)
 				// startTime := time.Now()
 				ret := rf.sendAppendEntries(idx, args, reply, RPC_TIMEOUT)
 				// elapsed := time.Since(startTime)
-				// DPrintf("send heart beat(%v => %v) took %s", rf.me, idx, elapsed)
+				// DPrintf("send heart beat(%v => %v) took %s, result: %v", rf.me, idx, elapsed, ret)
 
 				rf.mu.Lock()
 
@@ -797,7 +794,7 @@ func (rf *Raft) convertToLeader() {
 
 	rf.state = LEADER
 	rf.voteFor = rf.me // prevent RequestVote to leader for this term
-	rf.disableTimer()
+	rf.timer = nil
 	rf.numAliveNodes = len(rf.peers)
 
 	rf.nextIndex = make([]int, len(rf.peers))
@@ -811,23 +808,33 @@ func (rf *Raft) convertToLeader() {
 func (rf *Raft) leaderElection() {
 	rf.mu.Lock()
 	prevTerm := rf.currentTerm - 1
+	timer := rf.timer
 	rf.mu.Unlock()
 
+	DPrintf("server %v create leader election goroutine %v, term: %v", rf.me, getGID(), prevTerm+1)
+
+	quitCh := make(chan bool)
+
 	for iter := 0; ; iter++ {
+
+		select {
+		case <-timer.C:
+		case <-quitCh:
+			DPrintf("server %v leader election goroutine %v exit", rf.me, getGID())
+			return
+		}
 
 		rf.mu.Lock()
 		if (iter == 0 && rf.state != FOLLOWER) ||
 			(iter > 0 && rf.state != CANDIDATE) ||
 			(prevTerm < rf.currentTerm-1) {
 			rf.mu.Unlock()
+			DPrintf("server %v leader election goroutine %v exit, info mismatch", rf.me, getGID())
 			break
 		}
-		rf.mu.Unlock()
 
-		<-rf.timer.C
 		DPrintf("Server(%v) expire, term %v", rf.me, rf.currentTerm)
 
-		rf.mu.Lock()
 		prevTerm = rf.currentTerm
 
 		// rf.updateTimer()
@@ -863,11 +870,13 @@ func (rf *Raft) leaderElection() {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					if rf.state != CANDIDATE || rf.currentTerm != args.Term {
+						safeClose(quitCh)
 						return
 					}
 
 					if reply.Term > rf.currentTerm {
 						rf.convertToFollower(reply.Term, VOTENULL)
+						safeClose(quitCh)
 						return
 					}
 					if reply.VoteGranted == true {
@@ -875,6 +884,7 @@ func (rf *Raft) leaderElection() {
 					}
 					// if get marjor vote,convert to leader
 					if atomic.LoadInt32(&numVote) > int32(len(rf.peers)/2) {
+						safeClose(quitCh)
 						rf.convertToLeader()
 					}
 				}
