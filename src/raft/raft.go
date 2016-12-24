@@ -811,7 +811,7 @@ func (rf *Raft) leaderElection() {
 	timer := rf.timer
 	rf.mu.Unlock()
 
-	DPrintf("server %v create leader election goroutine %v, term: %v", rf.me, getGID(), prevTerm+1)
+	// DPrintf("server %v create leader election goroutine %v, term: %v", rf.me, getGID(), prevTerm+1)
 
 	quitCh := make(chan bool)
 
@@ -820,7 +820,7 @@ func (rf *Raft) leaderElection() {
 		select {
 		case <-timer.C:
 		case <-quitCh:
-			DPrintf("server %v leader election goroutine %v exit", rf.me, getGID())
+			// DPrintf("server %v leader election goroutine %v exit", rf.me, getGID())
 			return
 		}
 
@@ -829,7 +829,7 @@ func (rf *Raft) leaderElection() {
 			(iter > 0 && rf.state != CANDIDATE) ||
 			(prevTerm < rf.currentTerm-1) {
 			rf.mu.Unlock()
-			DPrintf("server %v leader election goroutine %v exit, info mismatch", rf.me, getGID())
+			// DPrintf("server %v leader election goroutine %v exit, info mismatch", rf.me, getGID())
 			break
 		}
 
