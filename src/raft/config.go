@@ -168,6 +168,10 @@ func (cfg *config) start1(i int) {
 			}
 
 			if err_msg != "" {
+				for _, rf := range cfg.rafts {
+					rf.dPrintInfo()
+				}
+				log.Printf("applied log: %v", cfg.logs)
 				log.Fatalf("apply error: %v\n", err_msg)
 				cfg.applyErr[i] = err_msg
 				// keep reading after error so that Raft doesn't block
@@ -421,6 +425,11 @@ func (cfg *config) one(cmd int, expectedServers int) int {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
+
+	// for _, rf := range cfg.rafts {
+	// 	rf.dPrintInfo()
+	// }
+
 	cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 	return -1
 }
