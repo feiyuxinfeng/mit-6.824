@@ -1,6 +1,9 @@
-* Mit6.824
-** lab1 MapReduce
-** lab2 Raft
+# Mit6.824
+[![Build Status](https://travis-ci.org/yuyang0/mit-6.824.svg?branch=master)](https://travis-ci.org/yuyang0/mit-6.824)
+
+## lab1 MapReduce
+## lab2 Raft
+
    1. RPC需要指定超时时间
    2. 因为RPC是一个阻塞操作,为了性能所以没有枷锁,因此每个RPC完成后,都要检查当前
       的term,state是否和发起rpc的时候一致,并根据结果做相应的处理.
@@ -14,3 +17,7 @@
    6. AppendEntries中不能删掉index比 =args.PrevLogIndex + len(args.Entries)= 大
       的日志项, 因为这些日志项很可能是携带了更多日志的RPC创建的,因为网络等的原因,这
       些RPC可能会先于当前RPC到达.
+   7. 在将日志apply的时候必须要检查， =args.PrevLogIndex+len(rf.Entries)= 与
+      =args.LeaderCommit= 的值，你只能apply二者中的较小值，原因是：如果follower
+      有一个不一致的日志项，这个日志项已经被集群commit，但是heartbeat比携带正确
+      日志的RPC先到达，那么你不检查这个条件的话就会将这个不一致的日志apply。
