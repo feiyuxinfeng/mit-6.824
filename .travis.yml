@@ -1,0 +1,10 @@
+dist: trusty
+language: go
+go_import_path: github.com/yuyang0/mit-6.824
+sudo: false
+
+go:
+  - 1.7.x
+
+script:
+ - src/raft/test.sh 1
