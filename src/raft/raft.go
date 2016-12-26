@@ -525,6 +525,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 		return
 	}
 
+	rf.updateTimer()
 	rf.voteFor = args.CandidateId
 	reply.VoteGranted = true
 	reply.Term = rf.currentTerm
