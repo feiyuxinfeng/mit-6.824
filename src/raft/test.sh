@@ -57,8 +57,9 @@ echo
 echo "======== end ======================="
 rm "$tmpfile"
 
+echo
+
 if [ "$failed" != "0" ]; then
-    echo
     echo "tests failed."
     exit 1
 else

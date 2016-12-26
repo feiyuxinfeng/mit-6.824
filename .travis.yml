@@ -7,4 +7,5 @@ go:
   - 1.7.x
 
 script:
+ - src/mapreduce/test.sh 5
  - src/raft/test.sh 5
