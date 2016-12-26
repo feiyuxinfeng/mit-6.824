@@ -596,6 +596,10 @@ func (rf *Raft) replicateLog() {
 
 					LeaderCommit: rf.commitIndex,
 				}
+				if len(args.Entries) == 0 {
+					rf.mu.Unlock()
+					return
+				}
 				// DPrintf("server %v args: %v", idx, args)
 				rf.mu.Unlock()
 
