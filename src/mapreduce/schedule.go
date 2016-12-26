@@ -63,7 +63,7 @@ func (mr *Master) schedule(phase jobPhase) {
 	}(ntasks)
 
 	for {
-		fmt.Print("hello")
+		// fmt.Print("hello")
 		select {
 		case <-doneChan:
 			goto outfor
