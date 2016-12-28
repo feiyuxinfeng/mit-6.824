@@ -52,3 +52,8 @@ func D3Printf(format string, a ...interface{}) (n int, err error) {
 	dprintf(3, format, a...)
 	return
 }
+
+func D4Printf(format string, a ...interface{}) (n int, err error) {
+	dprintf(4, format, a...)
+	return
+}
