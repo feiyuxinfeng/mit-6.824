@@ -177,6 +177,9 @@ func (rf *Raft) getPrevLogTerm(idx int) int {
 }
 
 func (rf *Raft) applyLogs() {
+	if rf.commitIndex > rf.lastApplied {
+		D1Printf("server %v apply logs(%v => %v), term: %v", rf.me, rf.lastApplied+1, rf.commitIndex, rf.currentTerm)
+	}
 	for rf.commitIndex > rf.lastApplied {
 		rf.lastApplied++
 		entry := rf.log[rf.lastApplied]
@@ -191,7 +194,7 @@ func (rf *Raft) applyLogs() {
 }
 
 // update leader's CommitIndex if neccessary
-func (rf *Raft) updateCommitIndex() {
+func (rf *Raft) updateLeaderCommitIndex() {
 	tmp := make([]int, len(rf.matchIndex))
 	copy(tmp, rf.matchIndex)
 	sort.Ints(tmp)
@@ -199,7 +202,7 @@ func (rf *Raft) updateCommitIndex() {
 	val := tmp[idx]
 
 	if rf.commitIndex < val {
-		DPrintf("Leader Server %v Update commitid %v => %v, last applied %v, matchidx: %v",
+		D1Printf("Leader Server %v Update commitid %v => %v, last applied %v, matchidx: %v",
 			rf.me, rf.commitIndex, val, rf.lastApplied, rf.matchIndex)
 		rf.commitIndex = val
 	}
@@ -431,7 +434,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 	// 5
 	if updateCommitIdx > rf.commitIndex {
-		DPrintf("Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, updateCommitIdx, rf.lastApplied)
+		D1Printf("Server %v Update commitid %v => %v, last applied %v", rf.me, rf.commitIndex, updateCommitIdx, rf.lastApplied)
 		// minIndex := args.LeaderCommit
 		// if minIndex > rf.getLastLogIndex() {
 		// 	minIndex = rf.getLastLogIndex()
@@ -646,7 +649,7 @@ func (rf *Raft) replicateLog() {
 						} else {
 							rf.nextIndex[idx] = intMax(rf.nextIndex[idx], nextIdx+len(args.Entries))
 							rf.matchIndex[idx] = rf.nextIndex[idx] - 1
-							rf.updateCommitIndex()
+							rf.updateLeaderCommitIndex()
 							rf.applyLogs()
 
 							rf.mu.Unlock()
@@ -693,7 +696,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.log = append(rf.log, entry)
 	rf.persist()
 
-	DPrintf("Server %v Start command %v index %v, entry: %v", rf.me, command, index, entry)
+	D1Printf("Server %v Start command %v index %v, entry: %v", rf.me, command, index, entry)
 	rf.replicateLog()
 
 	rf.mu.Unlock()
@@ -712,7 +715,7 @@ func (rf *Raft) Kill() {
 }
 
 func (rf *Raft) convertToFollower(term int, voteFor int) {
-	DPrintf("Convert server %v's state(%v => follower) Term(%v => %v)", rf.me, rf.state.String(), rf.currentTerm, term)
+	D1Printf("Convert server %v's state(%v => follower) Term(%v => %v)", rf.me, rf.state.String(), rf.currentTerm, term)
 
 	defer rf.persist()
 
@@ -807,7 +810,7 @@ func (rf *Raft) broadcastHeartbeat() {
 }
 
 func (rf *Raft) convertToLeader() {
-	DPrintf("Convert server %v's state(%v => leader) Term(%v)", rf.me, rf.state.String(), rf.currentTerm)
+	D1Printf("Convert server %v's state(%v => leader) Term(%v)", rf.me, rf.state.String(), rf.currentTerm)
 	defer rf.persist()
 
 	rf.state = LEADER
