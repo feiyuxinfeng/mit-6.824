@@ -779,14 +779,14 @@ func TestFigure8Unreliable(t *testing.T) {
 		}
 	}
 
-	// DPrintf("++++ before last one +++++")
-	// for i := 0; i < len(cfg.rafts); i++ {
-	// 	cfg.mu.Lock()
-	// 	rf := cfg.rafts[i]
-	// 	rf.dPrintInfo()
-	// 	DPrintf("server %v applied log: %v", i, cfg.logs[i])
-	// 	cfg.mu.Unlock()
-	// }
+	D4Printf("++++ before last one +++++")
+	for i := 0; i < len(cfg.rafts); i++ {
+		cfg.mu.Lock()
+		rf := cfg.rafts[i]
+		rf.dPrintInfo()
+		D4Printf("server %v applied log: %v", i, cfg.logs[i])
+		cfg.mu.Unlock()
+	}
 
 	cfg.one(rand.Int()%10000, servers)
 
