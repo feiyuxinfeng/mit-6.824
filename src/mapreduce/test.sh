@@ -47,7 +47,7 @@ for ((i=0;i<$num_loop;i++)); do
 done
 
 pass=`grep ^PASS$ $tmpfile | wc -l`
-failed=`grep ^FAIL $tmpfile | wc -l`
+failed=`expr $num_loop - $pass`
 echo
 echo "========= result ====================="
 echo
