@@ -32,6 +32,34 @@ import (
 // import "bytes"
 // import "encoding/gob"
 
+type IntSet struct {
+	set map[int]bool
+}
+
+func NewIntSet() *IntSet {
+	return &IntSet{
+		set: make(map[int]bool),
+	}
+}
+
+func (set *IntSet) Add(i int) bool {
+	_, found := set.set[i]
+	set.set[i] = true
+	return !found //False if it existed already
+}
+
+func (set *IntSet) Delete(i int) {
+	delete(set.set, i)
+}
+
+func (set *IntSet) Clear() {
+	set.set = make(map[int]bool)
+}
+
+func (set *IntSet) Len() int {
+	return len(set.set)
+}
+
 func init() {
 	rand.Seed(time.Now().UTC().UnixNano())
 }
@@ -137,7 +165,7 @@ type Raft struct {
 
 	heartbeatTimeoutMs int64
 
-	numAliveNodes int
+	failedPeers *IntSet
 
 	applyCh chan ApplyMsg
 
@@ -201,10 +229,12 @@ func (rf *Raft) updateLeaderCommitIndex() {
 	idx := len(tmp) - len(tmp)/2
 	val := tmp[idx]
 
-	if rf.commitIndex < val {
-		D1Printf("Leader Server %v Update commitid %v => %v, last applied %v, matchidx: %v",
-			rf.me, rf.commitIndex, val, rf.lastApplied, rf.matchIndex)
-		rf.commitIndex = val
+	for i := val; i > rf.commitIndex; i-- {
+		if rf.log[i].Term == rf.currentTerm {
+			D1Printf("Leader Server %v Update commitid %v => %v, last applied %v, matchidx: %v",
+				rf.me, rf.commitIndex, i, rf.lastApplied, rf.matchIndex)
+			rf.commitIndex = i
+		}
 	}
 }
 
@@ -246,7 +276,7 @@ func (rf *Raft) GetState() (int, bool) {
 
 	term = rf.currentTerm
 	isleader = (rf.state == LEADER)
-	if rf.numAliveNodes <= len(rf.peers)/2 {
+	if rf.failedPeers.Len() > len(rf.peers)/2 {
 		isleader = false
 	}
 
@@ -318,7 +348,7 @@ func (rf *Raft) dPrintInfo() {
 	log.Printf("Server %v, term: %v, state: %v", rf.me, rf.currentTerm, rf.state.String())
 	log.Printf("CommitIndex: %v, lastApplied: %v", rf.commitIndex, rf.lastApplied)
 	if rf.state == LEADER {
-		log.Printf("leader state: numAliveNodes: %v, matchIndex => %v, nextIndex => %v", rf.numAliveNodes, rf.matchIndex, rf.nextIndex)
+		log.Printf("leader state: failedPeers: %v, matchIndex => %v, nextIndex => %v", rf.failedPeers, rf.matchIndex, rf.nextIndex)
 	}
 	for _, entry := range rf.log[1:] {
 		log.Printf("[%v, %v, %v] ", entry.Index, entry.Command, entry.Term)
@@ -623,40 +653,43 @@ func (rf *Raft) replicateLog() {
 						rf.convertToFollower(reply.Term, VOTENULL)
 						rf.mu.Unlock()
 						return
-					} else {
-						if reply.Success == false {
-							// unconsistent log, so we need decrease nextIndex
-							DPrintf("=========conflict index: %v, term: %v", reply.ConflictIndex, reply.ConflictTerm)
-							if reply.ConflictTerm <= 0 || reply.ConflictIndex <= 0 {
-								rf.nextIndex[idx] = intMax(1, rf.matchIndex[idx]+1)
+					}
+					rf.failedPeers.Delete(idx)
+
+					if reply.Success == false {
+						// unconsistent log, so we need decrease nextIndex
+						DPrintf("=========conflict index: %v, term: %v", reply.ConflictIndex, reply.ConflictTerm)
+						if reply.ConflictTerm <= 0 || reply.ConflictIndex <= 0 {
+							rf.nextIndex[idx] = intMax(1, rf.matchIndex[idx]+1)
+						} else {
+							nextIdx := 1
+							if rf.log[reply.ConflictIndex].Term == reply.ConflictTerm {
+								nextIdx = intMax(1, reply.ConflictIndex)
 							} else {
-								nextIdx := 1
-								if rf.log[reply.ConflictIndex].Term == reply.ConflictTerm {
-									nextIdx = intMax(1, reply.ConflictIndex)
-								} else {
-									// still conflict, bypass a term
-									term := reply.ConflictTerm - 1
-									for i := reply.ConflictIndex; i > 0; i-- {
-										if rf.log[i].Term == term {
-											nextIdx = i
-										} else if rf.log[i].Term < term {
-											break
-										}
+								// still conflict, bypass a term
+								term := reply.ConflictTerm - 1
+								for i := reply.ConflictIndex; i > 0; i-- {
+									if rf.log[i].Term == term {
+										nextIdx = i
+									} else if rf.log[i].Term < term {
+										break
 									}
 								}
-								rf.nextIndex[idx] = intMax(nextIdx, rf.matchIndex[idx]+1)
 							}
-						} else {
-							rf.nextIndex[idx] = intMax(rf.nextIndex[idx], nextIdx+len(args.Entries))
-							rf.matchIndex[idx] = rf.nextIndex[idx] - 1
-							rf.updateLeaderCommitIndex()
-							rf.applyLogs()
-
-							rf.mu.Unlock()
-
-							return
+							rf.nextIndex[idx] = intMax(nextIdx, rf.matchIndex[idx]+1)
 						}
+					} else {
+						rf.nextIndex[idx] = intMax(rf.nextIndex[idx], nextIdx+len(args.Entries))
+						rf.matchIndex[idx] = rf.nextIndex[idx] - 1
+						rf.updateLeaderCommitIndex()
+						rf.applyLogs()
+
+						rf.mu.Unlock()
+
+						return
 					}
+				} else {
+					rf.failedPeers.Add(idx)
 				}
 				rf.mu.Unlock()
 			}
@@ -737,8 +770,6 @@ func (rf *Raft) broadcastHeartbeat() {
 		quitChan := make(chan bool)
 
 		go func(rf *Raft, idx int) {
-			isAlive := true
-
 			ticker := time.NewTicker(time.Duration(rf.heartbeatTimeoutMs) * time.Millisecond)
 			for ; ; <-ticker.C {
 				select {
@@ -781,10 +812,7 @@ func (rf *Raft) broadcastHeartbeat() {
 				if ret == true {
 					// DPrintf("heart beat (%v => %v) success", rf.me, idx)
 
-					if isAlive == false {
-						isAlive = true
-						rf.numAliveNodes++
-					}
+					rf.failedPeers.Delete(idx)
 
 					if reply.Term > rf.currentTerm {
 						// convert to follower
@@ -798,10 +826,7 @@ func (rf *Raft) broadcastHeartbeat() {
 					// }
 				} else {
 					// DPrintf("AppendEntries(%v => %v) fails", rf.me, idx)
-					if isAlive == true {
-						isAlive = false
-						rf.numAliveNodes--
-					}
+					rf.failedPeers.Add(idx)
 				}
 				rf.mu.Unlock()
 			}
@@ -816,7 +841,7 @@ func (rf *Raft) convertToLeader() {
 	rf.state = LEADER
 	rf.voteFor = rf.me // prevent RequestVote to leader for this term
 	rf.timer = nil
-	rf.numAliveNodes = len(rf.peers)
+	rf.failedPeers.Clear()
 
 	rf.nextIndex = make([]int, len(rf.peers))
 	for i := 0; i < len(rf.peers); i++ {
@@ -949,6 +974,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.lastApplied = 0
 
 	rf.state = FOLLOWER
+	rf.failedPeers = NewIntSet()
 
 	rf.initializeTimer()
 	rf.heartbeatTimeoutMs = 100
