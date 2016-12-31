@@ -73,7 +73,7 @@ func safeClose(ch chan bool) {
 }
 
 func getRandomElectionTimeout() int64 {
-	return 150 + rand.Int63n(150)
+	return 300 + rand.Int63n(200)
 }
 
 func intMax(i1, i2 int) int {
