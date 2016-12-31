@@ -6,6 +6,25 @@ sudo: false
 go:
   - 1.7.x
 
+env:
+  - LAB2_TEST_NAME=InitialElection
+  - LAB2_TEST_NAME=ReElection
+  - LAB2_TEST_NAME=BasicAgree
+  - LAB2_TEST_NAME=FailAgree
+  - LAB2_TEST_NAME=FailNoAgree
+  - LAB2_TEST_NAME=ConcurrentStarts
+  - LAB2_TEST_NAME=Rejoin
+  - LAB2_TEST_NAME=Backup
+  - LAB2_TEST_NAME=Count
+  - LAB2_TEST_NAME=Persist1
+  - LAB2_TEST_NAME=Persist2
+  - LAB2_TEST_NAME=Persist3
+  - LAB2_TEST_NAME=Figure8$
+  - LAB2_TEST_NAME=UnreliableAgree
+  - LAB2_TEST_NAME=Figure8Unreliable
+  - LAB2_TEST_NAME=ReliableChurn
+  - LAB2_TEST_NAME=UnreliableChurn
+
 script:
  # - src/mapreduce/test.sh 5
- - src/raft/test.sh 5
+ - src/raft/test.sh $LAB2_TEST_NAME 2
