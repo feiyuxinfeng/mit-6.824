@@ -883,7 +883,7 @@ func (rf *Raft) leaderElection() {
 			break
 		}
 
-		DPrintf("Server(%v) expire, term %v", rf.me, rf.currentTerm)
+		D1Printf("Server(%v) expire, term %v", rf.me, rf.currentTerm)
 
 		prevTerm = rf.currentTerm
 
