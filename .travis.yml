@@ -27,4 +27,4 @@ env:
 
 script:
  # - src/mapreduce/test.sh 5
- - src/raft/test.sh $LAB2_TEST_NAME 2
+ - src/raft/test.sh $LAB2_TEST_NAME 80
