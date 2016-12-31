@@ -47,11 +47,11 @@ for ((i=0;i<$num_loop;i++)); do
 done
 
 pass=`grep ^PASS$ $tmpfile | wc -l`
-failed=`grep ^FAIL$ $tmpfile | wc -l`
+failed=`grep ^FAIL $tmpfile | wc -l`
 echo
 echo "========= result ====================="
 echo
-echo "sucess: $pass"
+echo "success: $pass"
 echo "fail: $failed"
 echo
 echo "======== end ======================="
@@ -59,7 +59,7 @@ rm "$tmpfile"
 
 echo
 
-if [ "$failed" != "0" ]; then
+if [ "$pass" != "$num_loop" ]; then
     echo "tests failed."
     exit 1
 else
