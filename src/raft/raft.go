@@ -401,6 +401,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 	lastLogIndex := rf.getLastLogIndex()
 	lastLogTerm := rf.getLastLogTerm()
+	argsLastLogIndex := args.PrevLogIndex + len(args.Entries)
 
 	if lastLogIndex < args.PrevLogIndex {
 		hasConflict = true
@@ -440,6 +441,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 	// 3, 4 overwrite conflict entry and append new entries
 	if len(args.Entries) > 0 {
+		needOverwrite := false
 		for i := 0; i < len(args.Entries); i++ {
 			idx1 := args.PrevLogIndex + 1 + i
 			idx2 := i
@@ -452,10 +454,17 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 			entry2 := args.Entries[idx2]
 			if entry1.Term != entry2.Term {
 				rf.log[idx1] = entry2
+				needOverwrite = true
 			}
-
 		}
-		DPrintf("server %v <== %v receive log(%v-%v)", rf.me, args.LeaderId,
+		// see readme 6
+		// when we've already overwritten log, then we should delete logs behind argsLastLogIndex
+		if lastLogIndex > argsLastLogIndex {
+			if needOverwrite {
+				rf.log = rf.log[:argsLastLogIndex+1]
+			}
+		}
+		D1Printf("server %v <== %v receive log(%v-%v)", rf.me, args.LeaderId,
 			args.PrevLogIndex+1, args.PrevLogIndex+len(args.Entries))
 	}
 
