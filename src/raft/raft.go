@@ -172,6 +172,10 @@ type Raft struct {
 	startMu sync.Mutex
 }
 
+func (rf *Raft) isLeader() bool {
+	return (rf.state == LEADER) && (rf.failedPeers.Len() <= len(rf.peers)/2)
+}
+
 func (rf *Raft) numLogs() int {
 	return len(rf.log) - 1
 }
@@ -275,10 +279,7 @@ func (rf *Raft) GetState() (int, bool) {
 	defer rf.mu.Unlock()
 
 	term = rf.currentTerm
-	isleader = (rf.state == LEADER)
-	if rf.failedPeers.Len() > len(rf.peers)/2 {
-		isleader = false
-	}
+	isleader = rf.isLeader()
 
 	return term, isleader
 }
