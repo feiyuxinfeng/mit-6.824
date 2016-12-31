@@ -118,8 +118,7 @@ const (
 	CANDIDATE
 )
 
-const RPC_TIMEOUT = 200     // 200 milliseconds
-const REPLICATE_TIMEOUT = 5 // 5 seconds
+const RPC_TIMEOUT = 200 // 200 milliseconds
 
 func (state NodeState) String() string {
 	switch state {
