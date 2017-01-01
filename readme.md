@@ -26,3 +26,9 @@
       `args.LeaderCommit` 的值，你只能apply二者中的较小值，原因是：如果follower
       有一个不一致的日志项，这个日志项已经被集群commit，但是heartbeat比携带正确
       日志的RPC先到达，那么你不检查这个条件的话就会将这个不一致的日志apply。
+   8. 为了通过`Figure8Unreliable` 需要加大election timeout，使用paper中的时间
+      (150ms+random)会使测试不稳定，表现是每当一个term刚刚选举产生了一个了leader，
+      但是就有某一台server就超时了从而进入更高的term，这样当前的leader就被迫又进
+      入更高的term的follower状态，这样一直反复，导致很长时间不能完成选举，结果就
+      无法稳定的通过测试。这也说明raft的可用性很环境有一定关系。
+## lab3 kvraft
