@@ -25,6 +25,11 @@ env:
   - LAB2_TEST_NAME=ReliableChurn
   - LAB2_TEST_NAME=UnreliableChurn
 
+  - LAB3_TEST_NAME=TestBasic
+  - LAB3_TEST_NAME=TestConcurrent
+
+
 script:
  # - src/mapreduce/test.sh 5
  - src/raft/test.sh $LAB2_TEST_NAME 80
+ - src/kvraft/test.sh $LAB3_TEST_NAME 100
