@@ -30,5 +30,7 @@
       (150ms+random)会使测试不稳定，表现是每当一个term刚刚选举产生了一个了leader，
       但是就有某一台server就超时了从而进入更高的term，这样当前的leader就被迫又进
       入更高的term的follower状态，这样一直反复，导致很长时间不能完成选举，结果就
-      无法稳定的通过测试。这也说明raft的可用性很环境有一定关系。
+      无法稳定的通过测试。出现这种现象的原因主要还是`Figure8Unreliable`这个case
+      会随机的将rpc延迟一段时间。这也说明raft的可用性跟环境有一定关系。
+
 ## lab3 kvraft
