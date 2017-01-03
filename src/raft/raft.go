@@ -918,10 +918,10 @@ func (rf *Raft) leaderElection() {
 						rf.mu.Unlock()
 						return
 					}
+					timeout := int64(float32(rf.electionTimeoutMs) * 0.5)
 					rf.mu.Unlock()
 
 					reply := &RequestVoteReply{}
-					timeout := int64(float32(rf.electionTimeoutMs) * 0.5)
 					ret := rf.sendRequestVote(idx, args, reply, timeout)
 					DPrintf("goroutine %v Send requestVote(%v ==> %v), term: %v, result: %v", getGID(), rf.me, idx, args.Term, ret)
 
