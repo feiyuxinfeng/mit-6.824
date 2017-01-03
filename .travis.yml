@@ -7,29 +7,27 @@ go:
   - 1.7.x
 
 env:
-  - LAB2_TEST_NAME=InitialElection
-  - LAB2_TEST_NAME=ReElection
-  - LAB2_TEST_NAME=BasicAgree
-  - LAB2_TEST_NAME=FailAgree
-  - LAB2_TEST_NAME=FailNoAgree
-  - LAB2_TEST_NAME=ConcurrentStarts
-  - LAB2_TEST_NAME=Rejoin
-  - LAB2_TEST_NAME=Backup
-  - LAB2_TEST_NAME=Count
-  - LAB2_TEST_NAME=Persist1
-  - LAB2_TEST_NAME=Persist2
-  - LAB2_TEST_NAME=Persist3
-  - LAB2_TEST_NAME=Figure8$
-  - LAB2_TEST_NAME=UnreliableAgree
-  - LAB2_TEST_NAME=Figure8Unreliable
-  - LAB2_TEST_NAME=ReliableChurn
-  - LAB2_TEST_NAME=UnreliableChurn
+  - TEST_NAME="lab2 InitialElection"
+  - TEST_NAME="lab2 ReElection"
+  - TEST_NAME="lab2 BasicAgree"
+  - TEST_NAME="lab2 FailAgree"
+  - TEST_NAME="lab2 FailNoAgree"
+  - TEST_NAME="lab2 ConcurrentStarts"
+  - TEST_NAME="lab2 Rejoin"
+  - TEST_NAME="lab2 Backup"
+  - TEST_NAME="lab2 Count"
+  - TEST_NAME="lab2 Persist1"
+  - TEST_NAME="lab2 Persist2"
+  - TEST_NAME="lab2 Persist3"
+  - TEST_NAME="lab2 Figure8$ 80"
+  - TEST_NAME="lab2 UnreliableAgree"
+  - TEST_NAME="lab2 Figure8Unreliable 80"
+  - TEST_NAME="lab2 ReliableChurn"
+  - TEST_NAME="lab2 UnreliableChurn"
 
-  - LAB3_TEST_NAME=TestBasic
-  - LAB3_TEST_NAME=TestConcurrent
+  - TEST_NAME="lab3 TestBasic"
+  - TEST_NAME="lab3 TestConcurrent"
 
 
 script:
- # - src/mapreduce/test.sh 5
- - src/raft/test.sh $LAB2_TEST_NAME 80
- - src/kvraft/test.sh $LAB3_TEST_NAME 100
+ - ./test.sh $TEST_NAME 100
