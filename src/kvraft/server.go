@@ -34,10 +34,11 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Type  OpType
-	Key   string
-	Value string
-	Xid   int64
+	Type    OpType
+	Key     string
+	Value   string
+	Xid     int64
+	SeenXid int64
 }
 
 type RaftKV struct {
@@ -70,6 +71,8 @@ func (kv *RaftKV) processApplyLog() {
 					kv.state[op.Key] = op.Value
 				}
 			}
+			delete(kv.xidMap, op.SeenXid)
+			kv.xidMap[op.Xid] = op
 
 			if ch, ok := kv.chanMap[op.Xid]; ok {
 				delete(kv.chanMap, op.Xid)
@@ -90,12 +93,20 @@ func (kv *RaftKV) processApplyLog() {
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	op := Op{
-		Type: GET,
-		Xid:  args.Xid,
-		Key:  args.Key,
+		Type:    GET,
+		Xid:     args.Xid,
+		SeenXid: args.SeenXid,
+		Key:     args.Key,
 	}
 
 	kv.mu.Lock()
+	if cachedOp, exists := kv.xidMap[args.Xid]; exists {
+		reply.WrongLeader = false
+		reply.Err = ""
+		reply.Value = cachedOp.Value
+		kv.mu.Unlock()
+		return
+	}
 	resultCh := make(chan Op, 1)
 
 	if _, exists := kv.chanMap[args.Xid]; !exists {
@@ -139,9 +150,10 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 	op := Op{
-		Key:   args.Key,
-		Value: args.Value,
-		Xid:   args.Xid,
+		Key:     args.Key,
+		Value:   args.Value,
+		Xid:     args.Xid,
+		SeenXid: args.SeenXid,
 	}
 	if args.Op == "Put" {
 		op.Type = PUT
@@ -153,6 +165,12 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	kv.mu.Lock()
+	if _, exists := kv.xidMap[args.Xid]; exists {
+		reply.WrongLeader = false
+		reply.Err = ""
+		kv.mu.Unlock()
+		return
+	}
 
 	resultCh := make(chan Op, 1)
 

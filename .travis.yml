@@ -27,7 +27,29 @@ env:
 
   - TEST_NAME="lab3 TestBasic"
   - TEST_NAME="lab3 TestConcurrent"
+  - TEST_NAME="lab3 TestUnreliable$"
+  - TEST_NAME="lab3 TestUnreliableOneKey$"
+  - TEST_NAME="lab3 TestOnePartition$"
+  # - TEST_NAME="lab3 TestManyPartitionsOneClient"
+  # - TEST_NAME="lab3 TestManyPartitionsManyClients"
+  # - TEST_NAME="lab3 TestPersistOneClient"
+  # - TEST_NAME="lab3 TestPersistConcurrent"
+  # - TEST_NAME="lab3 TestPersistConcurrentUnreliable"
+  # - TEST_NAME="lab3 TestPersistPartition"
+  # - TEST_NAME="lab3 TestPersistPartitionUnreliable"
+  # - TEST_NAME="lab3 TestSnapshotRPC"
+  # - TEST_NAME="lab3 TestSnapshotRecover"
+  # - TEST_NAME="lab3 TestSnapshotRecoverManyClients"
+  # - TEST_NAME="lab3 TestSnapshotUnreliable"
+  # - TEST_NAME="lab3 TestSnapshotUnreliableRecover"
+  # - TEST_NAME="lab3 TestSnapshotUnreliableRecoverConcurrentPartition"
 
 
 script:
  - ./test.sh $TEST_NAME 100
+
+notifications:
+# Emails are sent to the committer's git-configured email address by default,
+  email:
+    on_success: always
+    on_failure: always

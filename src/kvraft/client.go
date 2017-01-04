@@ -97,8 +97,9 @@ func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
 	args := GetArgs{
-		Key: key,
-		Xid: nrand(),
+		Key:     key,
+		Xid:     nrand(),
+		SeenXid: ck.seenXid,
 	}
 	leader := -1
 	for {
@@ -115,6 +116,7 @@ func (ck *Clerk) Get(key string) string {
 				continue
 			}
 			DPrintf("Get(Xid: %v) success.", args.Xid)
+			ck.seenXid = args.Xid
 			return reply.Value
 		} else {
 			DPrintf("Get(xid: %v) RPC fails", args.Xid)
@@ -135,10 +137,11 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
 	args := PutAppendArgs{
-		Key:   key,
-		Value: value,
-		Op:    op,
-		Xid:   nrand(),
+		Key:     key,
+		Value:   value,
+		Op:      op,
+		Xid:     nrand(),
+		SeenXid: ck.seenXid,
 	}
 	leader := -1
 	for {
@@ -156,6 +159,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			}
 			ck.leader = leader
 			DPrintf("%v(Xid: %v) success.", op, args.Xid)
+			ck.seenXid = args.Xid
 			return
 		} else {
 			DPrintf("%v(xid: %v) RPC fails", op, args.Xid)
