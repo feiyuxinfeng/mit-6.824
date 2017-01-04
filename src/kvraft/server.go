@@ -75,7 +75,11 @@ func (kv *RaftKV) processApplyLog() {
 				}
 			}
 			delete(kv.xidMap, op.SeenXid)
-			kv.xidMap[op.Xid] = op
+			if cachedOp, exists := kv.xidMap[op.Xid]; !exists {
+				kv.xidMap[op.Xid] = op
+			} else {
+				D4Printf("Found duplicate op(xid: %v)", cachedOp.Xid)
+			}
 
 			if ch, ok := kv.chanMap[op.Xid]; ok {
 				delete(kv.chanMap, op.Xid)
