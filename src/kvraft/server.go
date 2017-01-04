@@ -7,7 +7,10 @@ import (
 	"log"
 	"raft"
 	"sync"
+	"time"
 )
+
+const REQUEST_TIMEOUT = 2
 
 type OpType int
 
@@ -135,16 +138,21 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 
-	resultOp := <-resultCh
-
-	if resultOp.Xid != args.Xid {
-		reply.Err = "conflit xid"
-		reply.Value = ""
+	select {
+	case resultOp := <-resultCh:
+		if resultOp.Xid != args.Xid {
+			reply.Err = "conflit xid"
+			reply.Value = ""
+			return
+		}
+		reply.Err = ""
+		reply.Value = resultOp.Value
+		return
+	case <-time.After(time.Duration(REQUEST_TIMEOUT) * time.Second):
+		reply.Err = "timeout"
 		return
 	}
-	reply.Err = ""
-	reply.Value = resultOp.Value
-	return
+
 }
 
 func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
@@ -199,14 +207,19 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 
-	resultOp := <-resultCh
-	if resultOp.Xid != args.Xid {
-		reply.Err = "conflit xid"
+	select {
+	case resultOp := <-resultCh:
+		if resultOp.Xid != args.Xid {
+			reply.Err = "conflit xid"
+			return
+		}
+
+		reply.Err = ""
+		return
+	case <-time.After(time.Duration(REQUEST_TIMEOUT) * time.Second):
+		reply.Err = "timeout"
 		return
 	}
-
-	reply.Err = ""
-	return
 }
 
 //
