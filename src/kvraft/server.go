@@ -62,23 +62,27 @@ func (kv *RaftKV) processApplyLog() {
 	for m := range kv.applyCh {
 		kv.mu.Lock()
 		if op, ok := (m.Command).(Op); ok {
-			switch op.Type {
-			case GET:
-				op.Value = kv.state[op.Key]
-			case PUT:
-				kv.state[op.Key] = op.Value
-			case APPEND:
-				if _, exists := kv.state[op.Key]; exists {
-					kv.state[op.Key] = kv.state[op.Key] + op.Value
-				} else {
-					kv.state[op.Key] = op.Value
-				}
-			}
+			isDuplicate := false
 			delete(kv.xidMap, op.SeenXid)
-			if cachedOp, exists := kv.xidMap[op.Xid]; !exists {
-				kv.xidMap[op.Xid] = op
-			} else {
+			if cachedOp, exists := kv.xidMap[op.Xid]; exists {
 				D4Printf("Found duplicate op(xid: %v)", cachedOp.Xid)
+				isDuplicate = true
+				op.Value = cachedOp.Value
+			}
+			if isDuplicate == false {
+				switch op.Type {
+				case GET:
+					op.Value = kv.state[op.Key]
+				case PUT:
+					kv.state[op.Key] = op.Value
+				case APPEND:
+					if _, exists := kv.state[op.Key]; exists {
+						kv.state[op.Key] = kv.state[op.Key] + op.Value
+					} else {
+						kv.state[op.Key] = op.Value
+					}
+				}
+				kv.xidMap[op.Xid] = op
 			}
 
 			if ch, ok := kv.chanMap[op.Xid]; ok {
