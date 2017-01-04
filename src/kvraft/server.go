@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const REQUEST_TIMEOUT = 2
+const REQUEST_TIMEOUT = 1
 
 type OpType int
 
