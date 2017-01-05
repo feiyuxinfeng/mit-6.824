@@ -44,6 +44,10 @@ type Op struct {
 	SeenXid int64
 }
 
+func (op *Op) string() string {
+	return fmt.Sprintf("OP<%v, %v, %v>", op.Type.String(), op.Xid, op.Key)
+}
+
 type RaftKV struct {
 	mu      sync.Mutex
 	me      int
@@ -54,8 +58,8 @@ type RaftKV struct {
 
 	// Your definitions here.
 	state   map[string]string
-	chanMap map[int64]chan Op
-	xidMap  map[int64]Op
+	chanMap map[int64]chan Op // Xid => chan Op
+	xidMap  map[int64]Op      // Xid => Op
 }
 
 func (kv *RaftKV) processApplyLog() {
@@ -148,11 +152,11 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 
 	select {
 	case resultOp := <-resultCh:
-		if resultOp.Xid != args.Xid {
-			reply.Err = "conflit xid"
-			reply.Value = ""
-			return
-		}
+		// if resultOp.Xid != args.Xid {
+		// 	reply.Err = "conflit xid"
+		// 	reply.Value = ""
+		// 	return
+		// }
 		reply.Err = ""
 		reply.Value = resultOp.Value
 		return
@@ -216,11 +220,11 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	select {
-	case resultOp := <-resultCh:
-		if resultOp.Xid != args.Xid {
-			reply.Err = "conflit xid"
-			return
-		}
+	case <-resultCh:
+		// if resultOp.Xid != args.Xid {
+		// 	reply.Err = "conflit xid"
+		// 	return
+		// }
 
 		reply.Err = ""
 		return
