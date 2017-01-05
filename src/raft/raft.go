@@ -612,6 +612,28 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 	}
 }
 
+type InstallSnapshotArgs struct {
+	Term              int
+	LeaderId          int
+	LastIncludedIndex int
+	Offset            int
+	Data              []byte
+	Done              bool
+}
+
+type InstallSnapshotReply struct {
+	Term int
+}
+
+func (rf *Raft) InstallSnapshot(args InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.currentTerm < args.Term {
+		reply.Term = rf.currentTerm
+		return
+	}
+}
+
 func (rf *Raft) replicateLog() {
 	totalServers := len(rf.peers)
 	originTerm := rf.currentTerm
