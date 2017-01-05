@@ -110,6 +110,78 @@ type LogEntry struct {
 	Command interface{}
 }
 
+type RaftLog struct {
+	log       []*LogEntry
+	PrevIndex int
+	PrevTerm  int
+}
+
+func NewRaftLog() *RaftLog {
+	rl := &RaftLog{
+		log:       make([]*LogEntry, 0),
+		PrevTerm:  0,
+		PrevIndex: 0,
+	}
+	return rl
+}
+
+func (rl *RaftLog) numLogs() int {
+	return rl.PrevIndex + len(rl.log)
+}
+
+func (rl *RaftLog) lastLogInex() int {
+	return rl.PrevIndex + len(rl.log)
+}
+
+func (rl *RaftLog) lastLogTerm() int {
+	term := rl.PrevTerm
+	numLogs := len(rl.log)
+	if numLogs > 0 {
+		term = rl.log[numLogs-1].Term
+	}
+	return term
+}
+
+func (rl *RaftLog) DeleteLog(idx int) {
+	if idx > rl.startIndex {
+		entry := rl.Get(idx)
+
+		realStartIndex := idx - rl.startIndex
+		rl.log = rl.log[realStartIndex:]
+		rl.PrevIndex = idx
+		rl.PrevTerm = entry.Term
+	}
+}
+
+func (rl *RaftLog) AppendLog(newLog *LogEntry) {
+	rl.log = append(rl.log, newLog)
+}
+
+func (rl *RaftLog) AppendLogs(newLogs []*LogEntry) {
+	rl.log = append(rl.log, newLogs...)
+}
+
+func (rl *RaftLog) Get(idx int) *LogEntry {
+	realIdx := idx - rl.PrevIndex - 1
+	return rl.log[realIdx]
+}
+
+func (rl *RaftLog) GetTerm(idx int) int {
+	entry := rl.Get(idx)
+	return entry.Term
+}
+
+func (rl *RaftLog) SetLog(idx int, entry *LogEntry) {
+	realIdx := idx - rl.PrevIndex - 1
+	rl.log[realIdx] = entry
+}
+
+func (rl *RaftLog) Slice(start, end int) []*LogEntry {
+	realStart := start - rl.PrevIndex - 1
+	realEnd := end - rl.PrevIndex - 1
+	return rl.log[realStart:realEnd]
+}
+
 type NodeState int
 
 const (
