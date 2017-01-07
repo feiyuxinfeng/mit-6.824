@@ -1,6 +1,7 @@
 package raftkv
 
 import (
+	"bytes"
 	"encoding/gob"
 	"fmt"
 	"labrpc"
@@ -54,6 +55,8 @@ type RaftKV struct {
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
 
+	persister *Persister
+
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
@@ -101,8 +104,27 @@ func (kv *RaftKV) processApplyLog() {
 			}
 		}
 
+		if len(kv.persister.ReadRaftState()) > kv.maxraftstate {
+			kv.SaveSnapshot()
+			go kv.rf.CompactLog(m.Index + 1)
+		}
 		kv.mu.Unlock()
 	}
+}
+
+func (kv *RaftKV) SaveSnapshot() {
+	w := new(bytes.Buffer)
+	e := gob.NewEncoder(w)
+	e.Encode(kv.state)
+	data := w.Bytes()
+	kv.persister.SaveSnapshot(data)
+}
+
+func (kv *RaftKV) ReadSnapshot() {
+	data := kv.persister.ReadSnapshot()
+	r := bytes.NewBuffer(data)
+	d := gob.NewDecoder(r)
+	d.Decode(&kv.state)
 }
 
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
@@ -164,7 +186,6 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 		reply.Err = "timeout"
 		return
 	}
-
 }
 
 func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
@@ -268,6 +289,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.maxraftstate = maxraftstate
 
 	// Your initialization code here.
+	kv.persister = persister
 	kv.state = make(map[string]string)
 	kv.chanMap = make(map[int64]chan Op)
 	kv.xidMap = make(map[int64]Op)
