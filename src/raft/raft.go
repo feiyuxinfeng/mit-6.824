@@ -143,10 +143,10 @@ func (rl *RaftLog) lastLogTerm() int {
 }
 
 func (rl *RaftLog) DeleteLog(idx int) {
-	if idx > rl.startIndex {
+	if idx > rl.PrevIndex {
 		entry := rl.Get(idx)
 
-		realStartIndex := idx - rl.startIndex
+		realStartIndex := idx - rl.PrevIndex
 		rl.log = rl.log[realStartIndex:]
 		rl.PrevIndex = idx
 		rl.PrevTerm = entry.Term
