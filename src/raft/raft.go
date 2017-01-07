@@ -468,6 +468,17 @@ func (rf *Raft) dPrintInfo() {
 	log.Printf("============ server %v info end ====================", rf.me)
 }
 
+//delete all log before idx
+func (rf *Raft) CompactLog(idx int) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if idx <= rf.rl.PrevIndex {
+		return
+	}
+	rf.rl.DeleteLogBeforeIndex(idx)
+	rf.persist()
+}
+
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderId     int
