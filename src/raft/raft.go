@@ -258,22 +258,22 @@ func (rf *Raft) getLastLogIndex() int {
 func (rf *Raft) getLastLogTerm() int {
 	lastLogIndex := rf.getLastLogIndex()
 	if lastLogIndex == 0 {
-		return -1
+		return 0
 	} else {
 		return rf.log[lastLogIndex].Term
 	}
 }
 
 // only valid for leader
-func (rf *Raft) getPrevLogIndex(idx int) int {
+func (rf *Raft) getPeerPrevLogIndex(idx int) int {
 	return rf.nextIndex[idx] - 1
 }
 
-func (rf *Raft) getPrevLogTerm(idx int) int {
-	prevLogIndex := rf.getPrevLogIndex(idx)
-	// DPrintf("server %v getPrevLogTerm prevLogIndex: %v", idx, prevLogIndex)
+func (rf *Raft) getPeerPrevLogTerm(idx int) int {
+	prevLogIndex := rf.getPeerPrevLogIndex(idx)
+	// DPrintf("server %v getPeerPrevLogTerm prevLogIndex: %v", idx, prevLogIndex)
 	if prevLogIndex == 0 {
-		return -1
+		return 0
 	} else {
 		return rf.log[prevLogIndex].Term
 	}
@@ -726,8 +726,8 @@ func (rf *Raft) replicateLog() {
 					Term:     rf.currentTerm,
 					LeaderId: rf.me,
 
-					PrevLogIndex: rf.getPrevLogIndex(idx),
-					PrevLogTerm:  rf.getPrevLogTerm(idx),
+					PrevLogIndex: rf.getPeerPrevLogIndex(idx),
+					PrevLogTerm:  rf.getPeerPrevLogTerm(idx),
 					Entries:      rf.log[nextIdx:],
 
 					LeaderCommit: rf.commitIndex,
@@ -890,8 +890,8 @@ func (rf *Raft) broadcastHeartbeat() {
 					Term:     rf.currentTerm,
 					LeaderId: rf.me,
 
-					PrevLogIndex: rf.getPrevLogIndex(idx),
-					PrevLogTerm:  rf.getPrevLogTerm(idx),
+					PrevLogIndex: rf.getPeerPrevLogIndex(idx),
+					PrevLogTerm:  rf.getPeerPrevLogTerm(idx),
 					Entries:      nil,
 
 					LeaderCommit: rf.commitIndex,
