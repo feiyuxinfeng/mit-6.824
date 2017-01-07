@@ -20,6 +20,7 @@ package raft
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"labrpc"
 	"log"
 	"math/rand"
@@ -111,75 +112,120 @@ type LogEntry struct {
 }
 
 type RaftLog struct {
-	log       []*LogEntry
+	Log       []*LogEntry
 	PrevIndex int
 	PrevTerm  int
 }
 
 func NewRaftLog() *RaftLog {
 	rl := &RaftLog{
-		log:       make([]*LogEntry, 0),
+		Log:       make([]*LogEntry, 0),
 		PrevTerm:  0,
 		PrevIndex: 0,
 	}
 	return rl
 }
 
-func (rl *RaftLog) numLogs() int {
-	return rl.PrevIndex + len(rl.log)
+func (rl *RaftLog) String() string {
+	var buffer bytes.Buffer
+	for _, entry := range rl.Log {
+		buffer.WriteString(fmt.Sprintf("[%v, %v, %v] ", entry.Index, entry.Command, entry.Term))
+	}
+	return fmt.Sprintf("<RaftLog: %v, %v, %v>", rl.PrevIndex, rl.PrevTerm, buffer.String())
 }
 
-func (rl *RaftLog) lastLogInex() int {
-	return rl.PrevIndex + len(rl.log)
+func (rl *RaftLog) numLogs() int {
+	return rl.PrevIndex + len(rl.Log)
+}
+
+func (rl *RaftLog) lastLogIndex() int {
+	return rl.PrevIndex + len(rl.Log)
 }
 
 func (rl *RaftLog) lastLogTerm() int {
 	term := rl.PrevTerm
-	numLogs := len(rl.log)
+	numLogs := len(rl.Log)
 	if numLogs > 0 {
-		term = rl.log[numLogs-1].Term
+		term = rl.Log[numLogs-1].Term
 	}
 	return term
 }
 
-func (rl *RaftLog) DeleteLog(idx int) {
+func (rl *RaftLog) DeleteLogBeforeIndex(idx int) {
 	if idx > rl.PrevIndex {
 		entry := rl.Get(idx)
 
 		realStartIndex := idx - rl.PrevIndex
-		rl.log = rl.log[realStartIndex:]
+		rl.Log = rl.Log[realStartIndex:]
 		rl.PrevIndex = idx
 		rl.PrevTerm = entry.Term
 	}
 }
 
+func (rl *RaftLog) DeleteLogAfterIndex(idx int) {
+	if idx > rl.PrevIndex {
+		realEnd := idx - rl.PrevIndex
+		rl.Log = rl.Log[:realEnd]
+	}
+}
+
 func (rl *RaftLog) AppendLog(newLog *LogEntry) {
-	rl.log = append(rl.log, newLog)
+	rl.Log = append(rl.Log, newLog)
 }
 
 func (rl *RaftLog) AppendLogs(newLogs []*LogEntry) {
-	rl.log = append(rl.log, newLogs...)
+	rl.Log = append(rl.Log, newLogs...)
 }
 
 func (rl *RaftLog) Get(idx int) *LogEntry {
 	realIdx := idx - rl.PrevIndex - 1
-	return rl.log[realIdx]
+	if realIdx < 0 {
+		return nil
+	}
+	return rl.Log[realIdx]
 }
 
 func (rl *RaftLog) GetTerm(idx int) int {
 	entry := rl.Get(idx)
+	if entry == nil {
+		return 0
+	}
 	return entry.Term
 }
 
 func (rl *RaftLog) SetLog(idx int, entry *LogEntry) {
 	realIdx := idx - rl.PrevIndex - 1
-	rl.log[realIdx] = entry
+	rl.Log[realIdx] = entry
 }
 
 func (rl *RaftLog) Slice(start, end int) []*LogEntry {
 	realStart := start - rl.PrevIndex - 1
 	realEnd := end - rl.PrevIndex - 1
-	return rl.log[realStart:realEnd]
+	return rl.Log[realStart:realEnd]
+}
+
+func (rl *RaftLog) SliceStart(start int) []*LogEntry {
+	realStart := start - rl.PrevIndex - 1
+	return rl.Log[realStart:]
+}
+
+func (rl *RaftLog) SliceEnd(end int) []*LogEntry {
+	realEnd := end - rl.PrevIndex - 1
+	return rl.Log[:realEnd]
+}
+
+// for debug
+func (rl *RaftLog) checkEqual(other *RaftLog) (bool, error) {
+	if other.PrevIndex != rl.PrevIndex {
+		return false, fmt.Errorf("PrevIndex is not equal")
+	}
+	if other.PrevTerm != rl.PrevTerm {
+		return false, fmt.Errorf("PrevTerm is not equal")
+	}
+	if len(other.Log) != len(rl.Log) {
+		return false, fmt.Errorf("log is not equal")
+	}
+	return true, nil
 }
 
 type NodeState int
@@ -222,7 +268,7 @@ type Raft struct {
 	// state a Raft server must maintain.
 	currentTerm int
 	voteFor     int
-	log         []*LogEntry
+	rl          *RaftLog
 
 	commitIndex int
 	lastApplied int
@@ -248,20 +294,15 @@ func (rf *Raft) isLeader() bool {
 }
 
 func (rf *Raft) numLogs() int {
-	return len(rf.log) - 1
+	return rf.rl.numLogs()
 }
 
 func (rf *Raft) getLastLogIndex() int {
-	return len(rf.log) - 1
+	return rf.rl.lastLogIndex()
 }
 
 func (rf *Raft) getLastLogTerm() int {
-	lastLogIndex := rf.getLastLogIndex()
-	if lastLogIndex == 0 {
-		return 0
-	} else {
-		return rf.log[lastLogIndex].Term
-	}
+	return rf.rl.lastLogTerm()
 }
 
 // only valid for leader
@@ -272,11 +313,7 @@ func (rf *Raft) getPeerPrevLogIndex(idx int) int {
 func (rf *Raft) getPeerPrevLogTerm(idx int) int {
 	prevLogIndex := rf.getPeerPrevLogIndex(idx)
 	// DPrintf("server %v getPeerPrevLogTerm prevLogIndex: %v", idx, prevLogIndex)
-	if prevLogIndex == 0 {
-		return 0
-	} else {
-		return rf.log[prevLogIndex].Term
-	}
+	return rf.rl.GetTerm(prevLogIndex)
 }
 
 func (rf *Raft) applyLogs() {
@@ -285,7 +322,7 @@ func (rf *Raft) applyLogs() {
 	}
 	for rf.commitIndex > rf.lastApplied {
 		rf.lastApplied++
-		entry := rf.log[rf.lastApplied]
+		entry := rf.rl.Get(rf.lastApplied)
 		msg := ApplyMsg{
 			Index:   entry.Index,
 			Command: entry.Command,
@@ -305,7 +342,8 @@ func (rf *Raft) updateLeaderCommitIndex() {
 	val := tmp[idx]
 
 	for i := val; i > rf.commitIndex; i-- {
-		if rf.log[i].Term == rf.currentTerm {
+		term := rf.rl.GetTerm(i)
+		if term == rf.currentTerm {
 			D1Printf("Leader Server %v Update commitid %v => %v, last applied %v, matchidx: %v",
 				rf.me, rf.commitIndex, i, rf.lastApplied, rf.matchIndex)
 			rf.commitIndex = i
@@ -374,12 +412,11 @@ func (rf *Raft) persist() {
 	e := gob.NewEncoder(w)
 	e.Encode(rf.currentTerm)
 	e.Encode(rf.voteFor)
-	e.Encode(rf.log)
+	e.Encode(rf.rl)
 	data := w.Bytes()
 	rf.persister.SaveRaftState(data)
 
-	// rf.dPrintSavedState()
-	// DPrintf("server %v memory state=> term: %v, lastLogIndex: %v, voteFor: %v", rf.me, rf.currentTerm, rf.getLastLogIndex(), rf.voteFor)
+	rf.checkSavedState()
 }
 
 //
@@ -398,21 +435,26 @@ func (rf *Raft) readPersist(data []byte) {
 	d := gob.NewDecoder(r)
 	d.Decode(&rf.currentTerm)
 	d.Decode(&rf.voteFor)
-	d.Decode(&rf.log)
+	d.Decode(&rf.rl)
 }
 
 // print the saved state(for debug)
-func (rf *Raft) dPrintSavedState() {
+func (rf *Raft) checkSavedState() {
 	data := rf.persister.ReadRaftState()
 	var term, voteFor int
-	var log []*LogEntry
+	var rl *RaftLog
 
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
 	d.Decode(&term)
 	d.Decode(&voteFor)
-	d.Decode(&log)
-	DPrintf("server %v saved state=> term: %v, lastLogIndex: %v, voteFor: %v", rf.me, term, len(log)-1, voteFor)
+	d.Decode(&rl)
+	ok, _ := rf.rl.checkEqual(rl)
+	if term != rf.currentTerm || voteFor != rf.voteFor || ok == false {
+		log.Printf("saved state is not equal")
+		rf.dPrintInfo()
+		log.Printf("server %v saved state=> term: %v, RaftLog: %v, voteFor: %v", rf.me, term, rl.String(), voteFor)
+	}
 }
 
 func (rf *Raft) dPrintInfo() {
@@ -422,9 +464,7 @@ func (rf *Raft) dPrintInfo() {
 	if rf.state == LEADER {
 		log.Printf("leader state: failedPeers: %v, matchIndex => %v, nextIndex => %v", rf.failedPeers, rf.matchIndex, rf.nextIndex)
 	}
-	for _, entry := range rf.log[1:] {
-		log.Printf("[%v, %v, %v] ", entry.Index, entry.Command, entry.Term)
-	}
+	log.Printf("RaftLog: %v", rf.rl.String())
 	log.Printf("============ server %v info end ====================", rf.me)
 }
 
@@ -479,7 +519,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		conflictTerm = intMin(lastLogTerm, args.PrevLogTerm)
 	} else {
 		if args.PrevLogIndex > 0 {
-			term := rf.log[args.PrevLogIndex].Term
+			term := rf.rl.GetTerm(args.PrevLogIndex)
 			if term != args.PrevLogTerm {
 				hasConflict = true
 				conflictTerm = intMin(args.PrevLogTerm, term)
@@ -498,9 +538,10 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		conflictIndex := 0
 		upperBound := intMin(args.PrevLogIndex, lastLogIndex)
 		for i := upperBound; i > 0; i-- {
-			if rf.log[i].Term == conflictTerm {
+			term := rf.rl.GetTerm(i)
+			if term == conflictTerm {
 				conflictIndex = i
-			} else if rf.log[i].Term < conflictTerm {
+			} else if term < conflictTerm {
 				break
 			}
 		}
@@ -518,13 +559,13 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 			idx2 := i
 			if idx1 > lastLogIndex {
 				remainEntries := args.Entries[idx2:]
-				rf.log = append(rf.log, remainEntries...)
+				rf.rl.AppendLogs(remainEntries)
 				break
 			}
-			entry1 := rf.log[idx1]
+			entry1 := rf.rl.Get(idx1)
 			entry2 := args.Entries[idx2]
 			if entry1.Term != entry2.Term {
-				rf.log[idx1] = entry2
+				rf.rl.SetLog(idx1, entry2)
 				needOverwrite = true
 			}
 		}
@@ -532,7 +573,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		// when we've already overwritten log, then we should delete logs behind argsLastLogIndex
 		if lastLogIndex > argsLastLogIndex {
 			if needOverwrite {
-				rf.log = rf.log[:argsLastLogIndex+1]
+				rf.rl.DeleteLogAfterIndex(argsLastLogIndex)
 			}
 		}
 		D1Printf("server %v <== %v receive log(%v-%v)", rf.me, args.LeaderId,
@@ -728,7 +769,7 @@ func (rf *Raft) replicateLog() {
 
 					PrevLogIndex: rf.getPeerPrevLogIndex(idx),
 					PrevLogTerm:  rf.getPeerPrevLogTerm(idx),
-					Entries:      rf.log[nextIdx:],
+					Entries:      rf.rl.SliceStart(nextIdx),
 
 					LeaderCommit: rf.commitIndex,
 				}
@@ -766,15 +807,15 @@ func (rf *Raft) replicateLog() {
 							rf.nextIndex[idx] = intMax(1, rf.matchIndex[idx]+1)
 						} else {
 							nextIdx := 1
-							if rf.log[reply.ConflictIndex].Term == reply.ConflictTerm {
+							if rf.rl.GetTerm(reply.ConflictIndex) == reply.ConflictTerm {
 								nextIdx = intMax(1, reply.ConflictIndex)
 							} else {
 								// still conflict, bypass a term
 								term := reply.ConflictTerm - 1
 								for i := reply.ConflictIndex; i > 0; i-- {
-									if rf.log[i].Term == term {
+									if rf.rl.GetTerm(i) == term {
 										nextIdx = i
-									} else if rf.log[i].Term < term {
+									} else if rf.rl.GetTerm(i) < term {
 										break
 									}
 								}
@@ -829,7 +870,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Index:   rf.getLastLogIndex() + 1,
 		Command: command,
 	}
-	rf.log = append(rf.log, entry)
+	rf.rl.AppendLog(entry)
 	rf.persist()
 
 	D1Printf("Server %v Start command %v index %v, entry: %v", rf.me, command, index, entry)
@@ -1069,9 +1110,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.currentTerm = 0
 	rf.voteFor = VOTENULL
-	rf.log = make([]*LogEntry, 1)
-	// in order to work well with gob, the first element can't be nil
-	rf.log[0] = &LogEntry{}
+	rf.rl = NewRaftLog()
 
 	rf.commitIndex = 0
 	rf.lastApplied = 0
