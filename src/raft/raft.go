@@ -416,7 +416,7 @@ func (rf *Raft) persist() {
 	data := w.Bytes()
 	rf.persister.SaveRaftState(data)
 
-	rf.checkSavedState()
+	// rf.checkSavedState()
 }
 
 //
