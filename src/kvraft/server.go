@@ -68,6 +68,9 @@ type RaftKV struct {
 func (kv *RaftKV) processApplyLog() {
 	for m := range kv.applyCh {
 		kv.mu.Lock()
+		if m.UseSnapshot {
+			kv.ReadSnapshot(m.Snapshot)
+		}
 		if op, ok := (m.Command).(Op); ok {
 			isDuplicate := false
 			delete(kv.xidMap, op.SeenXid)
@@ -104,9 +107,9 @@ func (kv *RaftKV) processApplyLog() {
 			}
 		}
 
-		if len(kv.persister.ReadRaftState()) > kv.maxraftstate {
+		if kv.persister.RaftStateSize() > kv.maxraftstate {
 			kv.SaveSnapshot()
-			go kv.rf.CompactLog(m.Index + 1)
+			kv.rf.CompactLog(m.Index + 1)
 		}
 		kv.mu.Unlock()
 	}
@@ -115,16 +118,18 @@ func (kv *RaftKV) processApplyLog() {
 func (kv *RaftKV) SaveSnapshot() {
 	w := new(bytes.Buffer)
 	e := gob.NewEncoder(w)
+	// e.Encode(idx)
 	e.Encode(kv.state)
+	e.Encode(kv.xidMap)
 	data := w.Bytes()
 	kv.persister.SaveSnapshot(data)
 }
 
-func (kv *RaftKV) ReadSnapshot() {
-	data := kv.persister.ReadSnapshot()
+func (kv *RaftKV) ReadSnapshot(data []byte) {
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
 	d.Decode(&kv.state)
+	d.Decode(&kv.xidMap)
 }
 
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
